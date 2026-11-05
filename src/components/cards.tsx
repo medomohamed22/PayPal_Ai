@@ -141,6 +141,23 @@ export function stepLabel(tool: string, s: Strings, lang: Lang): string {
   return (lang === "ar" ? ar : en)[tool] ?? tool;
 }
 
+function Favicon({ host, className }: { host: string; className?: string }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`https://www.google.com/s2/favicons?domain=${host}&sz=32`}
+      alt=""
+      referrerPolicy="no-referrer"
+      className={`rounded-full border-2 border-bg bg-bg-muted ${className ?? ""}`}
+    />
+  );
+}
+
+/**
+ * One compact activity line per reply (instead of a row + icon per tool call).
+ * Running: current step with shimmer + favicons of visited sites.
+ * Done: collapsed summary; tap to see the plain-text list.
+ */
 export function StepsTimeline({
   steps,
   live,
@@ -152,65 +169,90 @@ export function StepsTimeline({
   s: Strings;
   lang: Lang;
 }) {
-  const [open, setOpen] = useState(true);
-  const running = steps.some((x) => x.status === "running");
+  const [open, setOpen] = useState(false);
+  const ar = lang === "ar";
+  const running = live && steps.some((x) => x.status === "running");
+  const current = [...steps].reverse().find((x) => x.status === "running") ?? steps[steps.length - 1];
+  const hosts = Array.from(new Set(steps.filter((x) => x.tool === "browse_url" && x.detail).map((x) => x.detail!)));
+  const searches = steps.filter((x) => x.tool === "web_search").length;
+  const n = (v: number) => v.toLocaleString(ar ? "ar-EG-u-nu-latn" : "en-US");
+  const summary = [
+    searches ? (ar ? `بحث ${n(searches)} ${searches === 1 ? "مرة" : "مرات"}` : `${searches} search${searches > 1 ? "es" : ""}`) : null,
+    hosts.length ? (ar ? `تصفّح ${n(hosts.length)} ${hosts.length === 1 ? "موقع" : "مواقع"}` : `${hosts.length} site${hosts.length > 1 ? "s" : ""}`) : null,
+    !searches && !hosts.length ? (ar ? `${n(steps.length)} خطوات` : `${steps.length} steps`) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <div className="w-full max-w-xl">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="mb-1.5 flex items-center gap-2 text-xs font-medium text-fg-muted"
+        className="group flex max-w-full items-center gap-2.5 rounded-full border border-line bg-bg-soft py-1.5 ps-2 pe-3 text-[13px] transition-colors hover:border-line-strong"
       >
-        {live && running ? (
-          <span className="shimmer">{s.working}…</span>
-        ) : (
-          <span>
-            {steps.length} {lang === "ar" ? "خطوة" : steps.length === 1 ? "step" : "steps"}
+        <span className="relative flex size-4 shrink-0 items-center justify-center">
+          {running ? (
+            <>
+              <span className="absolute inset-0 animate-ping rounded-full bg-fg/20" />
+              <span className="size-2 rounded-full bg-fg" />
+            </>
+          ) : (
+            <Check className="size-3.5" />
+          )}
+        </span>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.span
+            key={running ? `${current?.id}-${current?.status}` : "done"}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.18 }}
+            className={`min-w-0 truncate ${running ? "shimmer font-medium" : "text-fg-soft"}`}
+            dir="auto"
+          >
+            {running && current
+              ? `${stepLabel(current.tool, s, lang)}${current.detail && current.tool === "browse_url" ? ` ${current.detail}` : ""}`
+              : summary}
+          </motion.span>
+        </AnimatePresence>
+        {hosts.length > 0 && (
+          <span className="flex shrink-0 items-center -space-x-1.5 rtl:space-x-reverse">
+            {hosts.slice(-4).map((h) => (
+              <motion.span key={h} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 400, damping: 20 }}>
+                <Favicon host={h} className="size-[18px]" />
+              </motion.span>
+            ))}
           </span>
         )}
-        <motion.span animate={{ rotate: open ? 90 : 0 }} className="inline-block rtl:-scale-x-100">
-          ›
+        <motion.span animate={{ rotate: open ? 180 : 0 }} className="shrink-0 text-[10px] text-fg-muted">
+          ▾
         </motion.span>
       </button>
       <AnimatePresence initial={false}>
         {open && (
-          <motion.ol
+          <motion.ul
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="relative ms-2 overflow-hidden border-s border-line ps-4"
+            className="mt-2 space-y-1 overflow-hidden ps-3 text-[12.5px]"
           >
-            {steps.map((st) => {
-              const Icon = STEP_ICON[st.tool] ?? Search;
-              return (
-                <motion.li
-                  key={st.id}
-                  layout
-                  initial={{ opacity: 0, x: lang === "ar" ? 8 : -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="relative flex items-center gap-2 py-1 text-[13px]"
-                >
-                  <span className="absolute -start-[1.42rem] flex size-[0.85rem] items-center justify-center rounded-full border border-line bg-bg">
-                    {st.status === "running" ? (
-                      <Loader2 className="size-2.5 animate-spin" />
-                    ) : st.status === "error" ? (
-                      <X className="size-2.5 text-danger" />
-                    ) : (
-                      <Check className="size-2.5" />
-                    )}
+            {steps.map((st) => (
+              <li key={st.id} className="flex min-w-0 items-center gap-2 text-fg-muted">
+                {st.tool === "browse_url" && st.detail ? (
+                  <Favicon host={st.detail} className="size-3.5 shrink-0 border-0" />
+                ) : (
+                  <span className={`size-1.5 shrink-0 rounded-full ${st.status === "error" ? "bg-danger" : st.status === "running" ? "animate-pulse bg-fg" : "bg-fg-muted"}`} />
+                )}
+                <span className="shrink-0 text-fg-soft">{stepLabel(st.tool, s, lang)}</span>
+                {st.detail && (
+                  <span className="min-w-0 truncate" dir="auto">
+                    {st.detail}
                   </span>
-                  <Icon className="size-3.5 shrink-0 text-fg-muted" strokeWidth={1.75} />
-                  <span className={st.status === "running" ? "shimmer font-medium" : "text-fg-soft"}>
-                    {stepLabel(st.tool, s, lang)}
-                  </span>
-                  {st.detail && (
-                    <span className="min-w-0 truncate text-fg-muted" dir="auto">
-                      {st.detail}
-                    </span>
-                  )}
-                </motion.li>
-              );
-            })}
-          </motion.ol>
+                )}
+                {st.status === "error" && <span className="shrink-0 text-danger">✕</span>}
+              </li>
+            ))}
+          </motion.ul>
         )}
       </AnimatePresence>
     </div>
@@ -285,7 +327,7 @@ export function ProductCards({
               }`}
             >
               <div className="relative">
-                <SmartImage src={o.image} alt={o.title} fallbackLabel={o.store} className="h-36 w-full" />
+                <SmartImage src={o.image} alt={o.title} fallbackLabel={o.store} className={o.image ? "h-36 w-full" : "h-24 w-full"} />
                 <div className="absolute start-2 top-2 flex flex-wrap gap-1">
                   {o.badges.map((b) => (
                     <span
@@ -325,9 +367,9 @@ export function ProductCards({
                   {o.rating != null && (
                     <div className="flex items-center gap-1 text-xs">
                       <Star className="size-3.5 fill-current" />
-                      <span className="font-medium tabular-nums">{o.rating.toLocaleString(lang === "ar" ? "ar-EG" : "en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>
+                      <span className="font-medium tabular-nums">{o.rating.toLocaleString(lang === "ar" ? "ar-EG-u-nu-latn" : "en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</span>
                       {o.reviewCount != null && (
-                        <span className="text-fg-muted">({o.reviewCount.toLocaleString(lang === "ar" ? "ar-EG" : "en-US")})</span>
+                        <span className="text-fg-muted">({o.reviewCount.toLocaleString(lang === "ar" ? "ar-EG-u-nu-latn" : "en-US")})</span>
                       )}
                     </div>
                   )}
@@ -341,14 +383,14 @@ export function ProductCards({
                       className="inline-flex items-center gap-1 underline-offset-2 hover:text-fg hover:underline"
                     >
                       <MapPin className="size-3" />
-                      {o.distanceKm.toLocaleString(lang === "ar" ? "ar-EG" : "en-US")} {s.km}
+                      {o.distanceKm.toLocaleString(lang === "ar" ? "ar-EG-u-nu-latn" : "en-US")} {s.km}
                       {o.pickup ? ` · ${s.pickup}` : ""}
                     </a>
                   )}
                   {o.deliveryDays != null && (
                     <span className="inline-flex items-center gap-1">
                       <Truck className="size-3" />
-                      {o.deliveryDays.toLocaleString(lang === "ar" ? "ar-EG" : "en-US")} {s.days}
+                      {o.deliveryDays.toLocaleString(lang === "ar" ? "ar-EG-u-nu-latn" : "en-US")} {s.days}
                     </span>
                   )}
                 </div>

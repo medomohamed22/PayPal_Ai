@@ -45,6 +45,10 @@ export interface FunctionTool {
 }
 
 async function base(cfg: MetaConfig): Promise<string> {
+  // Local test servers only (never enabled in production builds on Vercel).
+  if (process.env.DALIL_TEST_MODEL_BASE && cfg.baseUrl === process.env.DALIL_TEST_MODEL_BASE && !process.env.VERCEL) {
+    return cfg.baseUrl.replace(/\/+$/, "");
+  }
   const url = await assertPublicUrl(cfg.baseUrl);
   return url.toString().replace(/\/+$/, "");
 }
@@ -180,19 +184,31 @@ export interface SearchResult {
  */
 export async function webSearch(cfg: MetaConfig, query: string, signal?: AbortSignal): Promise<SearchResult> {
   const b = await base(cfg);
-  const res = await fetchWithTimeout(`${b}/responses`, {
+  let res = await fetchWithTimeout(`${b}/responses`, {
     method: "POST",
     headers: headers(cfg),
     body: JSON.stringify({
       model: cfg.model,
       input:
-        "Search the web and report concrete shopping facts (store names, product URLs, prices with currency, ratings, availability). Be factual and list sources.\n\nQuery: " +
+        "Search the web and list up to 8 concrete offers as compact lines: store | product | price + currency | product URL | rating if shown. No prose.\n\nQuery: " +
         query,
       tools: [{ type: "web_search" }],
+      reasoning: { effort: "minimal" },
+      max_output_tokens: 1200,
     }),
-    timeoutMs: 120000,
+    timeoutMs: 90000,
     signal,
   });
+  if (res.status === 400) {
+    // Some deployments reject reasoning/max_output_tokens on Responses — retry plain.
+    res = await fetchWithTimeout(`${b}/responses`, {
+      method: "POST",
+      headers: headers(cfg),
+      body: JSON.stringify({ model: cfg.model, input: `List concrete shopping offers (store | product | price | URL).\n\nQuery: ${query}`, tools: [{ type: "web_search" }] }),
+      timeoutMs: 90000,
+      signal,
+    });
+  }
   if (!res.ok) throw new Error(await errorText(res));
   const j = await res.json();
 
@@ -212,5 +228,5 @@ export async function webSearch(cfg: MetaConfig, query: string, signal?: AbortSi
       }
     }
   }
-  return { answer: answer.slice(0, 8000), sources: sources.slice(0, 15) };
+  return { answer: answer.slice(0, 4000), sources: sources.slice(0, 10) };
 }

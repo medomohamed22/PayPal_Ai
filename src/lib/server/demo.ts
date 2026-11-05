@@ -1,6 +1,7 @@
 import "server-only";
 import { rankOffers, type RawOffer } from "./rank";
 import { prepareOffers } from "./sign";
+import { formatMoney } from "../i18n";
 import type { AgentEvent, Lang, Market, Step } from "../types";
 
 /**
@@ -149,11 +150,7 @@ export async function runDemo(opts: {
 
   const best = ranked.find((o) => o.trust !== "suspicious")!;
   const sus = ranked.find((o) => o.trust === "suspicious" || o.flags.includes("suspicious_discount"));
-  const money = new Intl.NumberFormat(lang === "ar" ? "ar-EG" : "en-US", {
-    style: "currency",
-    currency: best.currency,
-    maximumFractionDigits: 0,
-  }).format(best.total);
+  const money = formatMoney(best.total, best.currency, lang);
 
   if (lang === "ar") {
     await say(

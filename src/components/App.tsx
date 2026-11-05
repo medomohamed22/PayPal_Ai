@@ -70,19 +70,15 @@ function toWire(messages: ChatMessage[]): WireMessage[] {
 function applyEvent(blocks: Block[], e: AgentEvent): Block[] {
   const next = [...blocks];
   if (e.type === "step") {
+    // A single activity block per reply, pinned to the top.
     let idx = next.findIndex((b) => b.type === "steps");
-    // Start a new steps group if text/cards were emitted since the last one.
-    if (idx === -1 || idx !== next.length - 1) {
-      const lastSteps = idx;
-      const running = lastSteps >= 0 && (next[lastSteps] as Extract<Block, { type: "steps" }>).steps.some((s) => s.id === e.step.id);
-      if (!running) {
-        next.push({ type: "steps", steps: [] });
-        idx = next.length - 1;
-      }
+    if (idx === -1) {
+      next.unshift({ type: "steps", steps: [] });
+      idx = 0;
     }
     const sb = next[idx] as Extract<Block, { type: "steps" }>;
     const steps: Step[] = [...sb.steps];
-    const at = steps.findIndex((s) => s.id === e.step.id);
+    const at = steps.findIndex((x) => x.id === e.step.id);
     if (at >= 0) steps[at] = { ...steps[at], ...e.step, detail: e.step.detail ?? steps[at].detail };
     else steps.push(e.step);
     next[idx] = { type: "steps", steps };
@@ -354,7 +350,7 @@ export default function App() {
         const before = prevStatus.current.get(w.id);
         prevStatus.current.set(w.id, w.status);
         if (!before || before === w.status) continue;
-        const price = w.lastPrice != null ? `${w.lastPrice.toLocaleString(ar ? "ar-EG" : "en-US")} ${w.currency}` : "";
+        const price = w.lastPrice != null ? `${w.lastPrice.toLocaleString(ar ? "ar-EG-u-nu-latn" : "en-US")} ${w.currency}` : "";
         if (w.status === "triggered") {
           const title = ar ? `🔔 السعر نزل: ${w.title}` : `🔔 Price drop: ${w.title}`;
           const body = ar ? `${price} في ${w.store} — تحب تشتري؟` : `${price} at ${w.store} — buy it?`;
@@ -460,7 +456,7 @@ export default function App() {
     if (p.notifications) enableNotifications();
     pushToast({
       title: ar ? "بدأت المراقبة 👀" : "Watching 👀",
-      body: `${watch.title} · ${ar ? "الهدف" : "target"} ${watch.targetPrice.toLocaleString(ar ? "ar-EG" : "en-US")} ${watch.currency}`,
+      body: `${watch.title} · ${ar ? "الهدف" : "target"} ${watch.targetPrice.toLocaleString(ar ? "ar-EG-u-nu-latn" : "en-US")} ${watch.currency}`,
       image: watch.image,
       action: { label: ar ? "عرض" : "View", run: () => setWatchesOpen(true) },
     });

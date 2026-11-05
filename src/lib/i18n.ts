@@ -7,7 +7,7 @@ const strings = {
     chats: "Chats",
     watches: "Price watches",
     settings: "Settings",
-    placeholder: "Find the best price for… (paste a link, a name, or attach a photo)",
+    placeholder: "A product name, link, or photo…",
     send: "Send",
     attach: "Attach photo",
     stop: "Stop",
@@ -79,7 +79,7 @@ const strings = {
     chats: "المحادثات",
     watches: "مراقبة الأسعار",
     settings: "الإعدادات",
-    placeholder: "دوّر على أرخص سعر لـ… (حط لينك أو اسم أو صورة)",
+    placeholder: "اسم منتج، لينك، أو صورة…",
     send: "إرسال",
     attach: "إرفاق صورة",
     stop: "إيقاف",
@@ -153,14 +153,20 @@ export function t(lang: Lang): Strings {
   return strings[lang] as unknown as Strings;
 }
 
+/** Locale for numbers: the Arabic UI keeps Latin digits (clearer for prices & models). */
+export function numLocale(lang: Lang): string {
+  return lang === "ar" ? "ar-EG-u-nu-latn" : "en-US";
+}
+
 export function formatMoney(amount: number, currency: string, lang: Lang): string {
+  const cur = currency.toUpperCase();
+  const digits = amount % 1 === 0 ? 0 : 2;
+  const num = amount.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  if (cur === "USD") return `$${num}`;
+  if (cur === "EGP") return lang === "ar" ? `${num} ج.م` : `EGP ${num}`;
   try {
-    return new Intl.NumberFormat(lang === "ar" ? "ar-EG" : "en-US", {
-      style: "currency",
-      currency,
-      maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
-    }).format(amount);
+    return new Intl.NumberFormat(numLocale(lang), { style: "currency", currency: cur, maximumFractionDigits: digits }).format(amount);
   } catch {
-    return `${amount} ${currency}`;
+    return `${num} ${cur}`;
   }
 }

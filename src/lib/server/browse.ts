@@ -136,7 +136,7 @@ export async function browse(rawUrl: string, signal?: AbortSignal): Promise<Brow
         "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
       },
       redirect: "manual",
-      timeoutMs: 15000,
+      timeoutMs: 8000,
       signal,
     });
     const loc = res.headers.get("location");
@@ -157,6 +157,6 @@ export async function browse(rawUrl: string, signal?: AbortSignal): Promise<Brow
       text: "",
     };
   }
-  const html = await readLimited(res);
+  const html = await readLimited(res, 1_500_000);
   return { status: res.status, ...extract(html, target) };
 }
