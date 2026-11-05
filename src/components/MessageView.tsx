@@ -5,7 +5,8 @@ import { AlertCircle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Strings } from "@/lib/i18n";
-import type { Block, ChatMessage, Lang, Offer } from "@/lib/types";
+import type { Block, ChatMessage, Lang, Offer, WatchMode } from "@/lib/types";
+import { WatchDraftCard } from "./Watches";
 import { ApprovalCard, LinkCard, ProductCards, StepsTimeline } from "./cards";
 import Logo from "./Logo";
 
@@ -19,6 +20,7 @@ export default function MessageView({
   busy,
   onBuy,
   onWatch,
+  onOpenDraft,
   onApproval,
   city,
 }: {
@@ -29,6 +31,7 @@ export default function MessageView({
   busy: boolean;
   onBuy: (o: Offer) => void;
   onWatch?: (o: Offer) => void;
+  onOpenDraft?: (d: { offer: Offer; targetPrice?: number; mode?: WatchMode }) => void;
   city?: string;
   onApproval: (msgId: string, blockIndex: number, action: ApprovalAction) => void;
 }) {
@@ -119,6 +122,17 @@ export default function MessageView({
               );
             case "link":
               return <LinkCard key={i} preview={b.preview} lang={lang} />;
+            case "watchDraft":
+              return (
+                <WatchDraftCard
+                  key={i}
+                  offer={b.offer}
+                  targetPrice={b.targetPrice}
+                  mode={b.mode}
+                  lang={lang}
+                  onOpen={() => onOpenDraft?.({ offer: b.offer, targetPrice: b.targetPrice, mode: b.mode })}
+                />
+              );
             case "error":
               return (
                 <div key={i} className="flex items-start gap-2 rounded-2xl border border-danger/30 px-3 py-2.5 text-sm text-danger">

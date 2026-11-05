@@ -107,7 +107,13 @@ export async function runDemo(opts: {
   const q = opts.text.toLowerCase();
   const product =
     CATALOG.find((p) => p.keys.some((k) => q.includes(k))) ?? (opts.hasImage ? CATALOG[1] : CATALOG[0]);
-  const wantsBuy = /\b(buy|order|purchase)\b|اشتري|اشتريه|اطلب/.test(q) && !/watch|راقب/.test(q);
+  const wantsWatch = /watch|track|راقب|تابع|لو نزل|if it drops|under|تحت/.test(q);
+  const wantsBuy = /\b(buy|order|purchase)\b|اشتري|اشتريه|اطلب/.test(q) && !wantsWatch;
+  const wantsAuto = wantsWatch && /\b(buy|auto)\b|اشتري|اشتريها|اشتريه|تلقائي/.test(q);
+  // Numbers in the message (Arabic-Indic digits too) → target price.
+  const nums = (q.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d))).replace(/[,٬]/g, "").match(/\d+(\.\d+)?/g) ?? [])
+    .map(Number)
+    .filter((n) => n >= 20);
 
   const say = async (s: string) => {
     const chars = Array.from(s);
@@ -165,5 +171,9 @@ export async function runDemo(opts: {
 
   if (wantsBuy) {
     emit({ type: "block", block: { type: "approval", offer: best, status: "pending" } });
+  }
+  if (wantsWatch) {
+    const target = nums.length ? Math.max(...nums) : Math.floor(best.price * 0.93);
+    emit({ type: "block", block: { type: "watchDraft", offer: best, targetPrice: target, mode: wantsAuto ? "auto" : "notify" } });
   }
 }

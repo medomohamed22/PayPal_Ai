@@ -341,3 +341,40 @@ export async function getAuthorization(authorizationId: string): Promise<{ statu
   const a = await pp<{ status: string; expiration_time?: string }>(`/v2/payments/authorizations/${authorizationId}`);
   return { status: a.status, expiresAt: a.expiration_time };
 }
+
+/* ---------------- Vault (save PayPal for auto-buy, no purchase) ---------------- */
+
+export async function createVaultSetupToken(returnUrl: string, cancelUrl: string): Promise<{ id: string; approveUrl: string }> {
+  const r = await pp<{ id: string; links: Array<{ rel: string; href: string }> }>("/v3/vault/setup-tokens", {
+    method: "POST",
+    requestId: `dalil-vault-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    body: {
+      payment_source: {
+        paypal: {
+          description: "Dalil auto-buy: purchases only within the limits you set",
+          usage_type: "MERCHANT",
+          customer_type: "CONSUMER",
+          permit_multiple_payment_tokens: false,
+          experience_context: {
+            brand_name: "Dalil",
+            return_url: returnUrl,
+            cancel_url: cancelUrl,
+          },
+        },
+      },
+    },
+  });
+  const approve = r.links.find((l) => l.rel === "approve" || l.rel === "payer-action");
+  if (!approve) throw new PayPalError("No vault approval link", 502);
+  return { id: r.id, approveUrl: approve.href };
+}
+
+export async function createPaymentToken(setupTokenId: string): Promise<{ id: string; customerId?: string }> {
+  if (!/^[A-Za-z0-9-]{6,64}$/.test(setupTokenId)) throw new PayPalError("Invalid setup token", 400);
+  const r = await pp<{ id: string; customer?: { id?: string } }>("/v3/vault/payment-tokens", {
+    method: "POST",
+    requestId: `dalil-ptok-${setupTokenId}`,
+    body: { payment_source: { token: { id: setupTokenId, type: "SETUP_TOKEN" } } },
+  });
+  return { id: r.id, customerId: r.customer?.id };
+}

@@ -9,5 +9,11 @@
       "main": true,
       "ccr-*": false
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "0 6 * * *"
+    }
+  ]
 }

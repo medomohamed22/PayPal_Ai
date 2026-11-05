@@ -16,7 +16,14 @@ export default function PayPalBridge({ kind }: { kind: PayPalResult["kind"] }) {
 
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
-    const result: PayPalResult = { kind, orderId: p.get("token") ?? "", payerId: p.get("PayerID") ?? undefined, t: Date.now() };
+    const flow = p.get("flow") === "vault" ? "vault" : "order";
+    const result: PayPalResult = {
+      kind,
+      flow,
+      orderId: (flow === "vault" ? p.get("approval_token_id") : null) ?? p.get("token") ?? "",
+      payerId: p.get("PayerID") ?? undefined,
+      t: Date.now(),
+    };
     try {
       localStorage.setItem(PAYPAL_RESULT_KEY, JSON.stringify(result));
     } catch {}

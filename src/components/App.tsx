@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Menu, Moon, PanelLeft, Plus, Settings2, Sun, Trash2, X } from "lucide-react";
+import { Bell, Menu, Moon, PanelLeft, Plus, Settings2, Sun, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { db, getKV, loadSettings, requestPersistence, saveSettings, setKV, uid } from "@/lib/db";
 import {
@@ -29,12 +29,16 @@ import {
   type Offer,
   type Settings,
   type Step,
+  type Watch,
+  type WatchMode,
   type WireMessage,
 } from "@/lib/types";
 import Composer, { type ComposerPayload } from "./Composer";
 import Logo from "./Logo";
 import MessageView, { type ApprovalAction } from "./MessageView";
 import SettingsSheet from "./SettingsSheet";
+import { Toasts, WatchesPanel, WatchSheet, type Toast } from "./Watches";
+import { enableNotifications, localNotify, registerServiceWorker, watchApi } from "@/lib/watch-client";
 
 /** Convert stored messages into the compact form the model sees. */
 function toWire(messages: ChatMessage[]): WireMessage[] {
@@ -57,6 +61,7 @@ function toWire(messages: ChatMessage[]): WireMessage[] {
               .join("\n"),
         );
       if (b.type === "approval") parts.push(`[Purchase approval for "${b.offer.title}" at ${b.offer.store}: ${b.status}]`);
+      if (b.type === "watchDraft") parts.push(`[Price watch proposed for "${b.offer.title}" at ${b.offer.store}, target ${b.targetPrice ?? "?"}]`);
     }
     return { role: m.role, text: parts.join("\n\n"), images: images.length ? images : undefined };
   });
@@ -103,9 +108,17 @@ export default function App() {
   const [desktopSidebar, setDesktopSidebar] = useState(true);
   const [dark, setDark] = useState(false);
   const [prefill, setPrefill] = useState<{ text: string; n: number }>();
+  const [watches, setWatches] = useState<Watch[]>([]);
+  const [vaultConnected, setVaultConnected] = useState(false);
+  const [storePersistent, setStorePersistent] = useState<boolean | null>(null);
+  const [watchesOpen, setWatchesOpen] = useState(false);
+  const [watchDraft, setWatchDraft] = useState<{ offer: Offer; targetPrice?: number; mode?: WatchMode } | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const prevStatus = useRef<Map<string, Watch["status"]>>(new Map());
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const s = t(settings.lang);
+  const ar = settings.lang === "ar";
 
   useEffect(() => {
     loadSettings().then((st) => {
@@ -292,11 +305,168 @@ export default function App() {
     if (b?.type !== "approval") return;
     blocks[idx] = { ...b, ...patch };
     await db().messages.put({ ...m, blocks });
+    if (patch.status === "captured" && b.watchId) {
+      watchApi.action(b.watchId, "purchased").then(({ watch }) => mergeWatch(watch)).catch(() => undefined);
+    }
+  };
+
+  /* ---------------- Price watches ---------------- */
+
+  const pushToast = useCallback((t: Omit<Toast, "id">) => {
+    const id = uid();
+    setToasts((x) => [...x.slice(-2), { ...t, id }]);
+    setTimeout(() => setToasts((x) => x.filter((y) => y.id !== id)), 9000);
+  }, []);
+
+  const mergeWatch = useCallback((w: Watch) => {
+    setWatches((ws) => (ws.some((x) => x.id === w.id) ? ws.map((x) => (x.id === w.id ? w : x)) : [w, ...ws]));
+    prevStatus.current.set(w.id, w.status);
+  }, []);
+
+  const vaultWaiter = useRef<(() => void) | null>(null);
+
+  const buyFromWatch = useCallback(
+    async (w: Watch) => {
+      if (!w.triggeredOffer) return;
+      let cid = convId;
+      if (!cid) {
+        cid = uid();
+        await db().conversations.put({ id: cid, title: `🔔 ${w.title}`.slice(0, 60), createdAt: Date.now(), updatedAt: Date.now() });
+        setConvId(cid);
+      }
+      await db().messages.put({
+        id: uid(),
+        conversationId: cid,
+        role: "assistant",
+        blocks: [{ type: "approval", offer: w.triggeredOffer, status: "pending", watchId: w.id }],
+        createdAt: Date.now(),
+      });
+      setWatchesOpen(false);
+      setSidebarOpen(false);
+    },
+    [convId],
+  );
+
+  // Announce status changes coming from the server (price drop, auto-buy, capture).
+  const announce = useCallback(
+    (list: Watch[]) => {
+      for (const w of list) {
+        const before = prevStatus.current.get(w.id);
+        prevStatus.current.set(w.id, w.status);
+        if (!before || before === w.status) continue;
+        const price = w.lastPrice != null ? `${w.lastPrice.toLocaleString(ar ? "ar-EG" : "en-US")} ${w.currency}` : "";
+        if (w.status === "triggered") {
+          const title = ar ? `🔔 السعر نزل: ${w.title}` : `🔔 Price drop: ${w.title}`;
+          const body = ar ? `${price} في ${w.store} — تحب تشتري؟` : `${price} at ${w.store} — buy it?`;
+          pushToast({ title, body, image: w.image, action: { label: ar ? "اشتري" : "Buy", run: () => buyFromWatch(w) } });
+          if (document.hidden) localNotify(title, body, `/?watch=${w.id}`, w.image);
+        } else if (w.status === "held") {
+          const title = ar ? `⚡ دليل اشتراه: ${w.title}` : `⚡ Dalil bought: ${w.title}`;
+          const body = ar ? `المبلغ محجوز — معاك ١٠ دقايق تلغي` : `Funds held — 10 minutes to cancel`;
+          pushToast({ title, body, image: w.image, action: { label: ar ? "عرض" : "View", run: () => setWatchesOpen(true) } });
+          if (document.hidden) localNotify(title, body, `/?watch=${w.id}`, w.image);
+        } else if (w.status === "bought") {
+          pushToast({ title: ar ? `📦 تم الشراء: ${w.title}` : `📦 Purchased: ${w.title}`, image: w.image });
+        }
+      }
+    },
+    [ar, pushToast, buyFromWatch],
+  );
+
+  const refreshWatches = useCallback(
+    async (sync: boolean) => {
+      try {
+        const r = sync ? await watchApi.sync() : await watchApi.list();
+        if (!sync) for (const w of r.watches) prevStatus.current.set(w.id, w.status);
+        else announce(r.watches);
+        setWatches(r.watches);
+        setVaultConnected(r.vaultConnected);
+        if (r.persistent != null) setStorePersistent(r.persistent);
+      } catch {
+        /* offline or server not ready */
+      }
+    },
+    [announce],
+  );
+
+  useEffect(() => {
+    registerServiceWorker();
+    refreshWatches(false);
+    if (new URLSearchParams(window.location.search).get("watch")) {
+      setWatchesOpen(true);
+      window.history.replaceState(null, "", "/");
+    }
+  }, [refreshWatches]);
+
+  // While the app is open, check watches every 30s (works even without a cron).
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!document.hidden && watches.some((w) => w.status === "active" || w.status === "held")) refreshWatches(true);
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [watches, refreshWatches]);
+
+  const onWatchAction = async (id: string, a: "simulate" | "check" | "cancel" | "capture" | "reactivate") => {
+    try {
+      const { watch } = await watchApi.action(id, a);
+      announce([watch]);
+      setWatches((ws) => ws.map((x) => (x.id === id ? watch : x)));
+    } catch (e) {
+      pushToast({ title: ar ? "حصل خطأ" : "Something went wrong", body: (e as Error).message });
+    }
+  };
+
+  const onDeleteWatch = async (id: string) => {
+    await watchApi.remove(id);
+    setWatches((ws) => ws.filter((x) => x.id !== id));
+  };
+
+  const connectVault = async () => {
+    const popup = openPayPalWindow();
+    try {
+      const setup = await watchApi.vaultSetup();
+      await setKV("pendingVault", { setupTokenId: setup.id });
+      const done = new Promise<void>((res) => (vaultWaiter.current = res));
+      if (popup && !popup.closed) {
+        popup.location.href = setup.approveUrl;
+        const watch = setInterval(() => {
+          if (popup.closed) {
+            clearInterval(watch);
+            setTimeout(() => vaultWaiter.current?.(), 2000);
+          }
+        }, 700);
+      } else {
+        window.location.href = setup.approveUrl;
+      }
+      await done;
+    } catch (e) {
+      popup?.close();
+      throw e;
+    }
+  };
+
+  const createWatch = async (p: { targetPrice: number; mode: WatchMode; maxSpend: number; notifications: boolean }) => {
+    if (!watchDraft) return;
+    const { watch } = await watchApi.create({
+      offer: watchDraft.offer,
+      targetPrice: p.targetPrice,
+      mode: p.mode,
+      maxSpend: p.maxSpend,
+      market: settings.market,
+      demo: settings.demoMode,
+    });
+    mergeWatch(watch);
+    setWatchDraft(null);
+    if (p.notifications) enableNotifications();
+    pushToast({
+      title: ar ? "بدأت المراقبة 👀" : "Watching 👀",
+      body: `${watch.title} · ${ar ? "الهدف" : "target"} ${watch.targetPrice.toLocaleString(ar ? "ar-EG" : "en-US")} ${watch.currency}`,
+      image: watch.image,
+      action: { label: ar ? "عرض" : "View", run: () => setWatchesOpen(true) },
+    });
   };
 
   /* ---------------- PayPal: approve → hold → (10 min) → capture | void ---------------- */
-
-  const ar = settings.lang === "ar";
 
   // The result can arrive via postMessage AND the storage event — handle each order once.
   const handledOrders = useRef(new Set<string>());
@@ -305,6 +475,22 @@ export default function App() {
     async (result: PayPalResult) => {
       if (!result?.orderId || handledOrders.current.has(result.orderId)) return;
       handledOrders.current.add(result.orderId);
+      if (result.flow === "vault") {
+        const pv = await getKV<{ setupTokenId: string }>("pendingVault");
+        await setKV("pendingVault", null);
+        clearResult();
+        if (result.kind === "approved" && pv) {
+          try {
+            await watchApi.vaultConfirm(pv.setupTokenId);
+            setVaultConnected(true);
+            pushToast({ title: ar ? "PayPal اتوصّل للشراء التلقائي ✅" : "PayPal connected for auto-buy ✅" });
+          } catch (e) {
+            pushToast({ title: ar ? "فشل توصيل PayPal" : "Couldn't connect PayPal", body: (e as Error).message });
+          }
+        }
+        vaultWaiter.current?.();
+        return;
+      }
       const pending = await getKV<PendingCheckout>("pendingCheckout");
       if (!pending || pending.orderId !== result.orderId) return;
       await setKV("pendingCheckout", null);
@@ -333,7 +519,8 @@ export default function App() {
         await updateBlock(msgId, idx, { status: "error", message: (e as Error).message });
       }
     },
-    [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ar, pushToast],
   );
 
   // Receive the PayPal result from the popup (postMessage / storage event) or after a full redirect.
@@ -527,6 +714,19 @@ export default function App() {
       <div className="border-t border-line p-2">
         <button
           onClick={() => {
+            setWatchesOpen(true);
+            setSidebarOpen(false);
+          }}
+          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm hover:bg-bg-muted"
+        >
+          <Bell className="size-4" />
+          {s.watches}
+          <span className="ms-auto rounded-full bg-bg-muted px-2 py-0.5 text-[10px] font-semibold tabular-nums">
+            {watches.filter((w) => w.status !== "bought" && w.status !== "cancelled").length}
+          </span>
+        </button>
+        <button
+          onClick={() => {
             setSettingsOpen(true);
             setSidebarOpen(false);
           }}
@@ -607,6 +807,21 @@ export default function App() {
             <button onClick={newChat} className="rounded-lg p-2 text-fg-muted hover:bg-bg-soft hover:text-fg md:hidden" aria-label={s.newChat}>
               <Plus className="size-5" />
             </button>
+            <button
+              onClick={() => setWatchesOpen(true)}
+              className="relative rounded-lg p-2 text-fg-muted hover:bg-bg-soft hover:text-fg"
+              aria-label={ar ? "مراقبة الأسعار" : "Price watches"}
+            >
+              <Bell className="size-[18px]" />
+              {watches.some((w) => w.status === "triggered" || w.status === "held") ? (
+                <motion.span
+                  initial={{ scale: 0 }}
+                  animate={{ scale: [1, 1.25, 1] }}
+                  transition={{ repeat: Infinity, duration: 1.6 }}
+                  className="absolute end-1 top-1 size-2 rounded-full bg-fg"
+                />
+              ) : null}
+            </button>
             <button onClick={toggleTheme} className="rounded-lg p-2 text-fg-muted hover:bg-bg-soft hover:text-fg" aria-label="Theme">
               <AnimatePresence mode="wait" initial={false}>
                 <motion.span key={dark ? "d" : "l"} initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }} className="block">
@@ -645,6 +860,9 @@ export default function App() {
                     lang={settings.lang}
                     busy={busy}
                     onBuy={onBuy}
+                    onWatch={(o) => setWatchDraft({ offer: o })}
+                    onOpenDraft={(d) => setWatchDraft(d)}
+                    city={settings.city}
                     onApproval={onApproval}
                   />
                 ))}
@@ -662,6 +880,34 @@ export default function App() {
       </main>
 
       <SettingsSheet open={settingsOpen} settings={settings} onClose={() => setSettingsOpen(false)} onSave={onSaveSettings} />
+      <WatchSheet
+        offer={watchDraft?.offer ?? null}
+        initialTarget={watchDraft?.targetPrice}
+        initialMode={watchDraft?.mode}
+        lang={settings.lang}
+        defaultMaxSpend={settings.maxSpend}
+        vaultConnected={vaultConnected}
+        onConnectVault={connectVault}
+        onCreate={createWatch}
+        onClose={() => setWatchDraft(null)}
+      />
+      <WatchesPanel
+        open={watchesOpen}
+        watches={watches}
+        lang={settings.lang}
+        demo={settings.demoMode}
+        persistent={storePersistent}
+        vaultConnected={vaultConnected}
+        onClose={() => setWatchesOpen(false)}
+        onAction={onWatchAction}
+        onBuy={buyFromWatch}
+        onDelete={onDeleteWatch}
+        onDisconnectVault={async () => {
+          await watchApi.vaultDisconnect();
+          setVaultConnected(false);
+        }}
+      />
+      <Toasts toasts={toasts} onDismiss={(id) => setToasts((x) => x.filter((y) => y.id !== id))} />
     </div>
   );
 }

@@ -6,6 +6,8 @@ export const PAYPAL_RESULT_KEY = "dalil-paypal-result";
 
 export interface PayPalResult {
   kind: "approved" | "cancelled";
+  /** "vault" for the save-PayPal-for-auto-buy flow, otherwise a checkout order. */
+  flow?: "vault" | "order";
   orderId: string;
   payerId?: string;
   t: number;

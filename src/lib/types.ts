@@ -79,7 +79,10 @@ export type Block =
       shipping?: { name?: string; address?: string };
       payerEmail?: string;
       captureId?: string;
+      /** Set when this approval came from a price watch (server owns the hold). */
+      watchId?: string;
     }
+  | { type: "watchDraft"; offer: Offer; targetPrice?: number; mode?: WatchMode }
   | { type: "error"; text: string };
 
 export interface ChatMessage {
@@ -157,4 +160,50 @@ export interface WireMessage {
   role: Role;
   text: string;
   images?: string[]; // data URLs, only sent for the latest user turn
+}
+
+/* ---------------- Price watches ---------------- */
+
+export type WatchMode = "notify" | "auto";
+export type WatchStatus = "active" | "triggered" | "held" | "bought" | "cancelled" | "error";
+
+export interface PricePoint {
+  t: number;
+  price: number;
+}
+
+export interface WatchHold {
+  orderId: string;
+  authorizationId: string;
+  captureAt: number;
+  amount: string;
+  currency: string;
+  shipping?: { name?: string; address?: string };
+}
+
+/** Public view of a watch (what the browser sees). */
+export interface Watch {
+  id: string;
+  title: string;
+  store: string;
+  url?: string;
+  image?: string;
+  currency: string;
+  market: Market;
+  shipping: number;
+  trust: TrustLevel;
+  targetPrice: number;
+  mode: WatchMode;
+  maxSpend: number;
+  source: "live" | "demo";
+  status: WatchStatus;
+  lastPrice?: number;
+  history: PricePoint[];
+  createdAt: number;
+  lastCheckedAt?: number;
+  /** Signed offer at the triggered price — used for the approve flow. */
+  triggeredOffer?: Offer;
+  hold?: WatchHold;
+  captureId?: string;
+  message?: string;
 }
