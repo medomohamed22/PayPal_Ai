@@ -378,3 +378,40 @@ export async function createPaymentToken(setupTokenId: string): Promise<{ id: st
   });
   return { id: r.id, customerId: r.customer?.id };
 }
+
+/* ---------------- After the purchase: tracking & refunds ---------------- */
+
+export interface TrackingInfo {
+  trackingNumber: string;
+  carrier: string;
+  addedAt: number;
+}
+
+/** Attach shipment tracking to the order (shows in the buyer's PayPal activity). */
+export async function addTracking(orderId: string, captureId: string, carrierName: string): Promise<TrackingInfo> {
+  if (!/^[A-Z0-9]{10,25}$/.test(orderId) || !/^[A-Z0-9]{10,25}$/.test(captureId)) {
+    throw new PayPalError("Invalid order or capture id", 400);
+  }
+  const trackingNumber = `DL${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+  await pp(`/v2/checkout/orders/${orderId}/track`, {
+    method: "POST",
+    requestId: `dalil-track-${captureId}`,
+    body: {
+      capture_id: captureId,
+      tracking_number: trackingNumber,
+      carrier: "OTHER",
+      carrier_name_other: carrierName.slice(0, 64),
+      notify_payer: false,
+    },
+  });
+  return { trackingNumber, carrier: carrierName, addedAt: Date.now() };
+}
+
+export async function refundCapture(captureId: string, note: string): Promise<{ id: string; status: string; amount?: string; currency?: string }> {
+  if (!/^[A-Z0-9]{10,25}$/.test(captureId)) throw new PayPalError("Invalid capture id", 400);
+  const r = await pp<{ id: string; status: string; amount?: { value: string; currency_code: string } }>(
+    `/v2/payments/captures/${captureId}/refund`,
+    { method: "POST", requestId: `dalil-refund-${captureId}`, body: { note_to_payer: note.slice(0, 255) } },
+  );
+  return { id: r.id, status: r.status, amount: r.amount?.value, currency: r.amount?.currency_code };
+}

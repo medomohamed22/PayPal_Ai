@@ -10,7 +10,7 @@ import { WatchDraftCard } from "./Watches";
 import { ApprovalCard, LinkCard, ProductCards, StepsTimeline } from "./cards";
 import Logo from "./Logo";
 
-export type ApprovalAction = "approve" | "decline" | "cancel" | "capture" | "retry";
+export type ApprovalAction = "approve" | "decline" | "cancel" | "capture" | "retry" | "track" | "refund";
 
 export default function MessageView({
   msg,
@@ -33,7 +33,7 @@ export default function MessageView({
   onWatch?: (o: Offer) => void;
   onOpenDraft?: (d: { offer: Offer; targetPrice?: number; mode?: WatchMode }) => void;
   city?: string;
-  onApproval: (msgId: string, blockIndex: number, action: ApprovalAction) => void;
+  onApproval: (msgId: string, blockIndex: number, action: ApprovalAction, reason?: string) => Promise<void> | void;
 }) {
   if (msg.role === "user") {
     const texts = msg.blocks.filter((b): b is Extract<Block, { type: "text" }> => b.type === "text");
@@ -118,6 +118,10 @@ export default function MessageView({
                   onCancelHold={() => onApproval(msg.id, i, "cancel")}
                   onCaptureNow={() => onApproval(msg.id, i, "capture")}
                   onRetry={() => onApproval(msg.id, i, "retry")}
+                  tracking={b.tracking}
+                  refund={b.refund}
+                  onTrack={async () => onApproval(msg.id, i, "track")}
+                  onRefund={async (r) => onApproval(msg.id, i, "refund", r)}
                 />
               );
             case "link":

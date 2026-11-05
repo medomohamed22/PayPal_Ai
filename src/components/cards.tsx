@@ -490,6 +490,138 @@ function HoldCountdown({ until, lang, total }: { until: number; lang: Lang; tota
   );
 }
 
+/* ---------- After the purchase: tracking & problems ---------- */
+
+type Reason = "not_received" | "damaged" | "not_as_described";
+
+function AfterCare({
+  lang,
+  tracking,
+  refund,
+  onTrack,
+  onRefund,
+}: {
+  lang: Lang;
+  tracking?: { trackingNumber: string; carrier: string; addedAt: number };
+  refund?: { id: string; status: string; reason: string; amount?: string; currency?: string };
+  onTrack?: () => Promise<void>;
+  onRefund?: (r: Reason) => Promise<void>;
+}) {
+  const ar = lang === "ar";
+  const [busy, setBusy] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const now = useNow(!!tracking && !refund);
+  const run = async (k: string, fn?: () => Promise<void>) => {
+    if (!fn) return;
+    setBusy(k);
+    try {
+      await fn();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (refund) {
+    return (
+      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="rounded-2xl bg-bg-soft p-3 text-xs">
+        <div className="flex items-center gap-1.5 font-semibold">
+          <RotateCcw className="size-3.5" /> {ar ? "اترجّعلك المبلغ عن طريق PayPal" : "Refunded via PayPal"}
+        </div>
+        <div className="mt-1 text-fg-muted" dir="ltr">
+          {refund.amount ? `${refund.amount} ${refund.currency} · ` : ""}
+          {refund.status} · {refund.id}
+        </div>
+      </motion.div>
+    );
+  }
+
+  // Demo shipment timeline (sandbox: Dalil is the merchant of record).
+  const stages = ar ? ["اتدفع", "اتشحن", "في الطريق", "اتسلّم"] : ["Paid", "Shipped", "In transit", "Delivered"];
+  const elapsed = tracking ? now - tracking.addedAt : -1;
+  const reached = !tracking ? 1 : elapsed > 120_000 ? 4 : elapsed > 30_000 ? 3 : 2;
+
+  return (
+    <div className="space-y-2.5">
+      {tracking && (
+        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="overflow-hidden rounded-2xl border border-line p-3">
+          <div className="mb-3 flex items-center justify-between text-xs">
+            <span className="font-semibold">{tracking.carrier}</span>
+            <span className="font-mono text-fg-muted" dir="ltr">
+              {tracking.trackingNumber}
+            </span>
+          </div>
+          <div className="relative flex justify-between">
+            <div className="absolute inset-x-2 top-[5px] h-[2px] bg-line" />
+            <motion.div
+              className="absolute top-[5px] h-[2px] bg-fg ltr:left-2 rtl:right-2"
+              initial={{ width: 0 }}
+              animate={{ width: `calc(${((reached - 1) / (stages.length - 1)) * 100}% - 1rem)` }}
+              transition={{ duration: 0.8, ease: "easeOut" }}
+            />
+            {stages.map((st, i) => (
+              <div key={st} className="relative z-10 flex flex-col items-center gap-1.5">
+                <motion.span
+                  animate={{ scale: i + 1 === reached ? [1, 1.25, 1] : 1 }}
+                  transition={{ repeat: i + 1 === reached && reached < 4 ? Infinity : 0, duration: 1.6 }}
+                  className={`size-3 rounded-full border-2 ${i < reached ? "border-fg bg-fg" : "border-line-strong bg-bg"}`}
+                />
+                <span className={`text-[10px] ${i < reached ? "font-semibold" : "text-fg-muted"}`}>{st}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-center text-[10px] text-fg-muted">
+            {ar ? "رقم التتبع اتسجّل على الأوردر في PayPal · خط سير تجريبي" : "Tracking added to the PayPal order · demo timeline"}
+          </p>
+        </motion.div>
+      )}
+      <div className="flex gap-2">
+        {!tracking && onTrack && (
+          <button
+            onClick={() => run("track", onTrack)}
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-2xl border border-line py-2.5 text-xs font-semibold hover:bg-bg-soft"
+          >
+            {busy === "track" ? <Loader2 className="size-3.5 animate-spin" /> : <Truck className="size-3.5" />}
+            {ar ? "تتبّع الطلب" : "Track order"}
+          </button>
+        )}
+        {onRefund && !asking && (
+          <button
+            onClick={() => setAsking(true)}
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-2xl border border-line py-2.5 text-xs font-medium text-fg-soft hover:bg-bg-soft"
+          >
+            {ar ? "مشكلة في الطلب؟" : "Problem with order?"}
+          </button>
+        )}
+      </div>
+      <AnimatePresence>
+        {asking && onRefund && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-1.5 overflow-hidden">
+            {(
+              [
+                ["not_received", ar ? "الطلب ماوصلش" : "It didn't arrive"],
+                ["damaged", ar ? "وصل بايظ" : "It arrived damaged"],
+                ["not_as_described", ar ? "مش زي الوصف" : "Not as described"],
+              ] as const
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => run(k, () => onRefund(k))}
+                className="flex w-full items-center justify-between rounded-xl border border-line px-3 py-2.5 text-xs hover:border-fg"
+              >
+                {label}
+                {busy === k ? <Loader2 className="size-3.5 animate-spin" /> : <span className="text-fg-muted">{ar ? "استرجاع ←" : "Refund →"}</span>}
+              </button>
+            ))}
+            <button onClick={() => setAsking(false)} className="w-full py-1 text-[11px] text-fg-muted underline">
+              {ar ? "رجوع" : "Back"}
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 export function ApprovalCard({
   offer,
   status,
@@ -504,6 +636,10 @@ export function ApprovalCard({
   onCancelHold,
   onCaptureNow,
   onRetry,
+  tracking,
+  refund,
+  onTrack,
+  onRefund,
 }: {
   offer: Offer;
   status: ApprovalStatus;
@@ -518,6 +654,10 @@ export function ApprovalCard({
   onCancelHold?: () => void;
   onCaptureNow?: () => void;
   onRetry?: () => void;
+  tracking?: { trackingNumber: string; carrier: string; addedAt: number };
+  refund?: { id: string; status: string; reason: string; amount?: string; currency?: string };
+  onTrack?: () => Promise<void>;
+  onRefund?: (r: "not_received" | "damaged" | "not_as_described") => Promise<void>;
 }) {
   const statusLine: Partial<Record<ApprovalStatus, string>> = {
     processing: s.processing,
@@ -685,6 +825,9 @@ export function ApprovalCard({
                   <RotateCcw className="size-3.5" />
                   {lang === "ar" ? "حاول تاني" : "Try again"}
                 </button>
+              )}
+              {status === "captured" && (
+                <AfterCare lang={lang} tracking={tracking} refund={refund} onTrack={onTrack} onRefund={onRefund} />
               )}
             </motion.div>
           )}

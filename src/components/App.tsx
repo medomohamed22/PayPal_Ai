@@ -60,7 +60,10 @@ function toWire(messages: ChatMessage[]): WireMessage[] {
               .map((o, i) => `${i + 1}. ${o.title} | ${o.store} | total ${o.total} ${o.currency} | trust ${o.trust}${o.url ? ` | ${o.url}` : ""}`)
               .join("\n"),
         );
-      if (b.type === "approval") parts.push(`[Purchase approval for "${b.offer.title}" at ${b.offer.store}: ${b.status}]`);
+      if (b.type === "approval")
+        parts.push(
+          `[Purchase approval for "${b.offer.title}" at ${b.offer.store}: ${b.status}${b.tracking ? `, tracking ${b.tracking.trackingNumber}` : ""}${b.refund ? `, refunded (${b.refund.reason})` : ""}]`,
+        );
       if (b.type === "watchDraft") parts.push(`[Price watch proposed for "${b.offer.title}" at ${b.offer.store}, target ${b.targetPrice ?? "?"}]`);
     }
     return { role: m.role, text: parts.join("\n\n"), images: images.length ? images : undefined };
@@ -573,7 +576,7 @@ export default function App() {
     await setKV("holds", holds.filter((h) => h.authorizationId !== authorizationId));
   };
 
-  const onApproval = async (msgId: string, idx: number, action: ApprovalAction) => {
+  const onApproval = async (msgId: string, idx: number, action: ApprovalAction, reason?: string) => {
     if (action === "decline") return updateBlock(msgId, idx, { status: "declined" });
     if (action === "retry") return updateBlock(msgId, idx, { status: "pending", message: undefined });
 
@@ -584,6 +587,35 @@ export default function App() {
     const block = m?.blocks[idx];
     if (block?.type !== "approval") {
       popup?.close();
+      return;
+    }
+
+    if (action === "track" || action === "refund") {
+      try {
+        if (action === "track") {
+          if (!block.orderId || !block.captureId) return;
+          const r = await fetch("/api/paypal/track", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderId: block.orderId, captureId: block.captureId, store: block.offer.store }),
+          });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+          await updateBlock(msgId, idx, { tracking: j });
+        } else {
+          if (!block.captureId) return;
+          const r = await fetch("/api/paypal/refund", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ captureId: block.captureId, reason }),
+          });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+          await updateBlock(msgId, idx, { refund: { ...j, reason: reason ?? "" } });
+        }
+      } catch (e) {
+        pushToast({ title: ar ? "حصل خطأ" : "Something went wrong", body: (e as Error).message });
+      }
       return;
     }
 

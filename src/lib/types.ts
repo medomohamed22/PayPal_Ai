@@ -81,6 +81,8 @@ export type Block =
       captureId?: string;
       /** Set when this approval came from a price watch (server owns the hold). */
       watchId?: string;
+      tracking?: { trackingNumber: string; carrier: string; addedAt: number };
+      refund?: { id: string; status: string; reason: string; amount?: string; currency?: string };
     }
   | { type: "watchDraft"; offer: Offer; targetPrice?: number; mode?: WatchMode }
   | { type: "error"; text: string };
