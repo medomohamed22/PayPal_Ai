@@ -1,0 +1,168 @@
+import "server-only";
+import { rankOffers, type RawOffer } from "./rank";
+import type { AgentEvent, Lang, Market, Step } from "../types";
+
+/**
+ * Demo mode: a scripted agent over a small seeded catalog, so judges can try
+ * the full flow (search → compare → approve → PayPal) without an LLM key.
+ * All prices here are illustrative sample data.
+ */
+interface DemoProduct {
+  keys: string[];
+  name: string;
+  offers: Record<Market, RawOffer[]>;
+}
+
+const s = (store: string, q: string) => {
+  const m: Record<string, string> = {
+    "Amazon.eg": `https://www.amazon.eg/s?k=${q}`,
+    Noon: `https://www.noon.com/egypt-en/search/?q=${q}`,
+    "B.TECH": `https://btech.com/en/catalogsearch/result/?q=${q}`,
+    "2B": `https://2b.com.eg/en/catalogsearch/result/?q=${q}`,
+    Jumia: `https://www.jumia.com.eg/catalog/?q=${q}`,
+    Amazon: `https://www.amazon.com/s?k=${q}`,
+    "Best Buy": `https://www.bestbuy.com/site/searchpage.jsp?st=${q}`,
+    Walmart: `https://www.walmart.com/search?q=${q}`,
+    Target: `https://www.target.com/s?searchTerm=${q}`,
+  };
+  return m[store] ?? `https://dalil-demo.store/p/${q}`;
+};
+
+const CATALOG: DemoProduct[] = [
+  {
+    keys: ["iphone", "ايفون", "آيفون"],
+    name: "iPhone 17 Pro 256GB",
+    offers: {
+      EG: [
+        { title: "Apple iPhone 17 Pro 256GB – Cosmic Orange", store: "B.TECH", url: s("B.TECH", "iphone+17+pro"), price: 74999, currency: "EGP", shipping: 0, rating: 4.7, reviewCount: 412, distanceKm: 3.2, pickup: true, notes: "Official warranty, in stock at Nasr City branch" },
+        { title: "Apple iPhone 17 Pro 256GB", store: "Amazon.eg", url: s("Amazon.eg", "iphone+17+pro"), price: 73850, currency: "EGP", shipping: 0, rating: 4.6, reviewCount: 1280, deliveryDays: 2, notes: "Sold by Amazon, Prime delivery" },
+        { title: "iPhone 17 Pro 256GB (Middle East version)", store: "Noon", url: s("Noon", "iphone+17+pro"), price: 72990, currency: "EGP", shipping: 150, rating: 4.5, reviewCount: 640, deliveryDays: 3 },
+        { title: "Apple iPhone 17 Pro 256GB", store: "2B", url: s("2B", "iphone+17+pro"), price: 75499, currency: "EGP", shipping: 0, rating: 4.8, reviewCount: 96, distanceKm: 1.4, pickup: true, notes: "Pickup today from Heliopolis" },
+        { title: "iPhone 17 Pro 256GB – HOT SALE", store: "mega-phones-deals.shop", url: "https://mega-phones-deals.shop/iphone17pro", price: 39999, currency: "EGP", listPrice: 79999, shipping: 0, rating: 5, reviewCount: 7, notes: "50% off, payment by transfer only" },
+      ],
+      US: [
+        { title: "Apple iPhone 17 Pro 256GB", store: "Apple", url: "https://www.apple.com/shop/buy-iphone", price: 1099, currency: "USD", shipping: 0, rating: 4.8, reviewCount: 2100, deliveryDays: 2 },
+        { title: "Apple iPhone 17 Pro 256GB (Unlocked)", store: "Best Buy", url: s("Best Buy", "iphone+17+pro"), price: 1079, currency: "USD", shipping: 0, rating: 4.7, reviewCount: 880, distanceKm: 4.1, pickup: true },
+        { title: "Apple iPhone 17 Pro 256GB", store: "Amazon", url: s("Amazon", "iphone+17+pro"), price: 1089, currency: "USD", shipping: 0, rating: 4.6, reviewCount: 3150, deliveryDays: 1 },
+        { title: "iPhone 17 Pro 256GB – Factory Sealed", store: "Walmart", url: s("Walmart", "iphone+17+pro"), price: 1069, currency: "USD", shipping: 9.99, rating: 4.3, reviewCount: 210, deliveryDays: 4 },
+      ],
+    },
+  },
+  {
+    keys: ["airpods", "ايربودز", "سماعة"],
+    name: "AirPods Pro 3",
+    offers: {
+      EG: [
+        { title: "Apple AirPods Pro 3", store: "Amazon.eg", url: s("Amazon.eg", "airpods+pro+3"), price: 12499, currency: "EGP", shipping: 0, rating: 4.7, reviewCount: 950, deliveryDays: 1 },
+        { title: "Apple AirPods Pro 3 with USB‑C case", store: "Noon", url: s("Noon", "airpods+pro+3"), price: 11999, currency: "EGP", shipping: 0, rating: 4.6, reviewCount: 520, deliveryDays: 2 },
+        { title: "AirPods Pro 3", store: "B.TECH", url: s("B.TECH", "airpods+pro+3"), price: 12999, currency: "EGP", shipping: 0, rating: 4.8, reviewCount: 130, distanceKm: 2.7, pickup: true },
+        { title: "AirPods Pro 3", store: "Jumia", url: s("Jumia", "airpods+pro+3"), price: 12150, currency: "EGP", shipping: 60, rating: 4.2, reviewCount: 88, deliveryDays: 4 },
+      ],
+      US: [
+        { title: "Apple AirPods Pro 3", store: "Amazon", url: s("Amazon", "airpods+pro+3"), price: 219, currency: "USD", shipping: 0, rating: 4.7, reviewCount: 12400, deliveryDays: 1 },
+        { title: "Apple AirPods Pro 3", store: "Target", url: s("Target", "airpods+pro+3"), price: 229, currency: "USD", shipping: 0, rating: 4.6, reviewCount: 980, distanceKm: 2.2, pickup: true },
+        { title: "Apple AirPods Pro 3", store: "Best Buy", url: s("Best Buy", "airpods+pro+3"), price: 224.99, currency: "USD", shipping: 0, rating: 4.8, reviewCount: 2300, distanceKm: 4.1, pickup: true },
+        { title: "AirPods Pro 3 (refurb, like new)", store: "airdeals-outlet.net", url: "https://airdeals-outlet.net/app3", price: 99, listPrice: 249, currency: "USD", shipping: 0, rating: 4.9, reviewCount: 11 },
+      ],
+    },
+  },
+  {
+    keys: ["air fryer", "قلاية", "fryer"],
+    name: "Air fryer",
+    offers: {
+      EG: [
+        { title: "Philips Airfryer XL HD9270 6.2L", store: "B.TECH", url: s("B.TECH", "philips+airfryer"), price: 3899, currency: "EGP", shipping: 0, rating: 4.7, reviewCount: 610, distanceKm: 3.2, pickup: true },
+        { title: "Tornado Air Fryer 5.5L", store: "Amazon.eg", url: s("Amazon.eg", "tornado+air+fryer"), price: 2799, currency: "EGP", shipping: 0, rating: 4.4, reviewCount: 2050, deliveryDays: 1 },
+        { title: "Black+Decker Air Fryer 4L", store: "Noon", url: s("Noon", "black+decker+air+fryer"), price: 2450, currency: "EGP", shipping: 50, rating: 4.3, reviewCount: 730, deliveryDays: 3 },
+      ],
+      US: [
+        { title: "Ninja Air Fryer Pro 5-in-1 5QT", store: "Amazon", url: s("Amazon", "ninja+air+fryer"), price: 99.99, currency: "USD", shipping: 0, rating: 4.8, reviewCount: 41000, deliveryDays: 1 },
+        { title: "COSORI Pro II 5.8QT", store: "Walmart", url: s("Walmart", "cosori+air+fryer"), price: 89, currency: "USD", shipping: 0, rating: 4.7, reviewCount: 9800, deliveryDays: 2 },
+        { title: "Instant Vortex Plus 6QT", store: "Target", url: s("Target", "instant+vortex"), price: 109.99, currency: "USD", shipping: 0, rating: 4.6, reviewCount: 3100, distanceKm: 2.2, pickup: true },
+      ],
+    },
+  },
+];
+
+const wait = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((res) => {
+    const t = setTimeout(res, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(t);
+      res();
+    });
+  });
+
+export async function runDemo(opts: {
+  text: string;
+  hasImage: boolean;
+  market: Market;
+  city: string;
+  lang: Lang;
+  signal?: AbortSignal;
+  emit: (e: AgentEvent) => void;
+}): Promise<void> {
+  const { market, city, lang, emit, signal } = opts;
+  const q = opts.text.toLowerCase();
+  const product =
+    CATALOG.find((p) => p.keys.some((k) => q.includes(k))) ?? (opts.hasImage ? CATALOG[1] : CATALOG[0]);
+  const wantsBuy = /\b(buy|order|purchase)\b|اشتري|اشتريه|اطلب/.test(q) && !/watch|راقب/.test(q);
+
+  const say = async (s: string) => {
+    const chars = Array.from(s);
+    for (let i = 0; i < chars.length; i += 6) {
+      const part = chars.slice(i, i + 6).join("");
+      if (signal?.aborted) return;
+      emit({ type: "text", delta: part });
+      await wait(18, signal);
+    }
+  };
+
+  const steps: Array<Omit<Step, "status">> = [
+    ...(opts.hasImage ? [{ id: "d0", tool: "identify_image", label: "identify_image", detail: product.name }] : []),
+    { id: "d1", tool: "web_search", label: "web_search", detail: `${product.name} price ${city}` },
+    ...product.offers[market].slice(0, 3).map((o, i) => ({
+      id: `d2${i}`,
+      tool: "browse_url",
+      label: "browse_url",
+      detail: o.url ? new URL(o.url).hostname.replace(/^www\./, "") : o.store,
+    })),
+    { id: "d3", tool: "deal_check", label: "deal_check", detail: `${product.offers[market].length} offers` },
+  ];
+
+  for (const st of steps) {
+    if (signal?.aborted) return;
+    emit({ type: "step", step: { ...st, status: "running" } });
+    await wait(550, signal);
+    emit({ type: "step", step: { ...st, status: "done" } });
+  }
+
+  const ranked = rankOffers(product.offers[market], market);
+  emit({ type: "block", block: { type: "products", offers: ranked, note: "demo" } });
+
+  const best = ranked.find((o) => o.trust !== "suspicious")!;
+  const sus = ranked.find((o) => o.trust === "suspicious" || o.flags.includes("suspicious_discount"));
+  const money = new Intl.NumberFormat(lang === "ar" ? "ar-EG" : "en-US", {
+    style: "currency",
+    currency: best.currency,
+    maximumFractionDigits: 0,
+  }).format(best.total);
+
+  if (lang === "ar") {
+    await say(
+      `أفضل اختيار: **${best.store}** بإجمالي ${money} (السعر + الشحن)، وده أحسن توازن بين السعر والتقييم وثقة المتجر.` +
+        (sus ? `\n\n⚠️ خلي بالك: عرض **${sus.store}** شكله وهمي — السعر أقل من السوق بكتير والتقييمات قليلة.` : "") +
+        `\n\n_بيانات تجريبية (Demo mode)._`,
+    );
+  } else {
+    await say(
+      `Best pick: **${best.store}** at ${money} total (price + shipping) — the best balance of price, rating and store trust.` +
+        (sus ? `\n\n⚠️ Heads up: the **${sus.store}** offer looks fake — far below market price with very few reviews.` : "") +
+        `\n\n_Sample data (Demo mode)._`,
+    );
+  }
+
+  if (wantsBuy) {
+    emit({ type: "block", block: { type: "approval", offer: best, status: "pending" } });
+  }
+}
