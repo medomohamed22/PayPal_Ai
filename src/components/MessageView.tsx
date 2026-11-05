@@ -9,7 +9,7 @@ import type { Block, ChatMessage, Lang, Offer } from "@/lib/types";
 import { ApprovalCard, LinkCard, ProductCards, StepsTimeline } from "./cards";
 import Logo from "./Logo";
 
-export type ApprovalAction = "approve" | "decline" | "cancel" | "capture";
+export type ApprovalAction = "approve" | "decline" | "cancel" | "capture" | "retry";
 
 export default function MessageView({
   msg,
@@ -102,12 +102,15 @@ export default function MessageView({
                   status={b.status}
                   message={b.message}
                   holdExpiresAt={b.holdExpiresAt}
+                  shipping={b.shipping}
+                  payerEmail={b.payerEmail}
                   s={s}
                   lang={lang}
                   onApprove={() => onApproval(msg.id, i, "approve")}
                   onDecline={() => onApproval(msg.id, i, "decline")}
                   onCancelHold={() => onApproval(msg.id, i, "cancel")}
                   onCaptureNow={() => onApproval(msg.id, i, "capture")}
+                  onRetry={() => onApproval(msg.id, i, "retry")}
                 />
               );
             case "link":

@@ -1,5 +1,6 @@
 import "server-only";
 import { rankOffers, type RawOffer } from "./rank";
+import { prepareOffers } from "./sign";
 import type { AgentEvent, Lang, Market, Step } from "../types";
 
 /**
@@ -137,7 +138,7 @@ export async function runDemo(opts: {
     emit({ type: "step", step: { ...st, status: "done" } });
   }
 
-  const ranked = rankOffers(product.offers[market], market);
+  const ranked = prepareOffers(rankOffers(product.offers[market], market));
   emit({ type: "block", block: { type: "products", offers: ranked, note: "demo" } });
 
   const best = ranked.find((o) => o.trust !== "suspicious")!;

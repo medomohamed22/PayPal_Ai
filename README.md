@@ -21,7 +21,10 @@ Shopping agents (Grok, ChatGPT, Perplexity, Google, Amazon) race to "buy faster"
 - [x] Agent loop with Muse Spark: `web_search` (Meta built-in), `browse_url` (our SSRF-safe extractor), `show_offers`, `request_purchase_approval`
 - [x] Transparent ranking + fake-deal flags, product & link cards, approval box
 - [x] Demo mode (no API key needed)
-- [ ] PayPal sandbox checkout (authorize / capture / void, shipping from PayPal)
+- [x] PayPal sandbox checkout: Orders v2 `AUTHORIZE` → 10-minute hold with live countdown → auto **capture**, or one-tap **void**
+- [x] Shipping address pulled from the buyer's PayPal account (`shipping_preference: GET_FROM_FILE`)
+- [x] Signed offers (HMAC) — tampered prices are rejected; spending mandate (max total, verified stores only) enforced server-side
+- [x] EGP prices charged in USD at a disclosed rate (PayPal doesn't settle EGP)
 - [ ] Price watches (Upstash Redis + cron), PayPal Vault auto-buy, Web Push
 - [ ] Shipment tracking & dispute assistant
 
@@ -33,12 +36,22 @@ npm run dev                   # http://localhost:3000
 ```
 Open **Settings** → paste your Meta Model API key (stored only in your browser's IndexedDB) → **Fetch models** → pick a model → **Save**. Or toggle **Demo mode** to try it without a key.
 
+## Checkout flow
+```
+Approve ─► POST /api/paypal/create-order   (verify signature + mandate → Orders v2, intent=AUTHORIZE)
+        ─► PayPal popup (buyer approves) ─► /paypal/return
+        ─► POST /api/paypal/authorize       (funds HELD, shipping from PayPal)
+        ─► 10-min cancel window ─► POST /api/paypal/capture   (or /api/paypal/void to release)
+```
+
 ## Architecture
 - **Next.js 15 (App Router) on Vercel**, Tailwind v4, Framer Motion
 - `src/app/api/chat` — streams NDJSON agent events (steps, text, cards)
 - `src/lib/server/agent.ts` — tool-calling loop over the Meta Model API (OpenAI-compatible)
 - `src/lib/server/browse.ts` — fetches product pages (JSON-LD / OpenGraph), page text treated as untrusted
 - `src/lib/server/rank.ts` — deterministic ranking & fake-deal detection
+- `src/lib/server/paypal.ts` — PayPal REST client (OAuth, Orders v2, authorize / capture / void, Vault)
+- `src/lib/server/sign.ts` — HMAC-signed offers so checkout can't be tampered with
 - `src/lib/db.ts` — Dexie/IndexedDB: chats, images, settings stay on the device
 
 ## License

@@ -233,11 +233,53 @@ export default function SettingsSheet({
                     ))}
                   </div>
                 </div>
+              </section>
+
+              <section className="space-y-4">
+                <h3 className="text-[11px] font-semibold uppercase tracking-widest text-fg-muted">
+                  {isRtl ? "حدود الصرف (Mandate)" : "Spending mandate"}
+                </h3>
+                <div>
+                  <label className={label}>
+                    {isRtl ? "أقصى إجمالي للشراء الواحد" : "Max total per purchase"} ({draft.market === "EG" ? "EGP" : "USD"})
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    dir="ltr"
+                    className={field}
+                    placeholder={isRtl ? "0 = من غير حد" : "0 = no limit"}
+                    value={draft.maxSpend || ""}
+                    onChange={(e) => set("maxSpend", Math.max(0, Number(e.target.value) || 0))}
+                  />
+                  <p className="mt-1.5 text-[11px] leading-snug text-fg-muted">
+                    {isRtl
+                      ? "السيرفر بيرفض أي دفع فوق الحد ده — حتى لو الـ AI طلبه."
+                      : "The server refuses any payment above this — even if the AI asks for it."}
+                  </p>
+                </div>
+                <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line px-3 py-3">
+                  <span className="text-sm">{isRtl ? "متاجر موثوقة بس" : "Verified stores only"}</span>
+                  <button
+                    role="switch"
+                    aria-checked={draft.verifiedOnly}
+                    onClick={() => set("verifiedOnly", !draft.verifiedOnly)}
+                    className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${draft.verifiedOnly ? "bg-inv-bg" : "bg-line-strong"}`}
+                  >
+                    <motion.span
+                      layout
+                      className="absolute top-0.5 size-5 rounded-full bg-bg shadow"
+                      style={{ insetInlineStart: draft.verifiedOnly ? "1.375rem" : "0.125rem" }}
+                    />
+                  </button>
+                </label>
                 <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-line px-3 py-3">
                   <span className="text-sm">{s.demoMode}</span>
                   <button
                     role="switch"
                     aria-checked={draft.demoMode}
+                    aria-label="demo-mode"
                     onClick={() => set("demoMode", !draft.demoMode)}
                     className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${draft.demoMode ? "bg-inv-bg" : "bg-line-strong"}`}
                   >

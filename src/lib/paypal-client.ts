@@ -1,0 +1,103 @@
+"use client";
+
+import type { Mandate, Offer } from "./types";
+
+export const PAYPAL_RESULT_KEY = "dalil-paypal-result";
+
+export interface PayPalResult {
+  kind: "approved" | "cancelled";
+  orderId: string;
+  payerId?: string;
+  t: number;
+}
+
+export interface PendingCheckout {
+  msgId: string;
+  idx: number;
+  orderId: string;
+}
+
+export interface HoldRecord {
+  msgId: string;
+  idx: number;
+  authorizationId: string;
+  captureAt: number;
+}
+
+export class CheckoutError extends Error {
+  constructor(message: string, public code?: string) {
+    super(message);
+  }
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new CheckoutError(j.error ?? `HTTP ${res.status}`, j.code);
+  return j as T;
+}
+
+/** Must be called synchronously inside the click handler, or popup blockers kick in. */
+export function openPayPalWindow(): Window | null {
+  const w = 480;
+  const h = 720;
+  const left = Math.max(0, window.screenX + (window.outerWidth - w) / 2);
+  const top = Math.max(0, window.screenY + (window.outerHeight - h) / 2);
+  const popup = window.open("", "dalil-paypal", `popup=yes,width=${w},height=${h},left=${left},top=${top}`);
+  if (popup) {
+    try {
+      popup.document.title = "PayPal · Dalil";
+      popup.document.body.style.cssText =
+        "margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui;background:#fff;color:#0a0a0a";
+      popup.document.body.textContent = "Opening PayPal…";
+    } catch {}
+  }
+  return popup;
+}
+
+export function createOrder(offer: Offer, mandate: Mandate, vault = false) {
+  return post<{ id: string; approveUrl: string; charge: { value: string; currency: string } }>(
+    "/api/paypal/create-order",
+    { offer, mandate, vault },
+  );
+}
+
+export function authorize(orderId: string) {
+  return post<{
+    orderId: string;
+    authorizationId: string;
+    status: string;
+    amount: { value: string; currency: string };
+    expiresAt?: string;
+    shipping: { name?: string; address?: string };
+    payerEmail?: string;
+    vaultId?: string;
+  }>("/api/paypal/authorize", { orderId });
+}
+
+export function capture(authorizationId: string) {
+  return post<{ id: string; status: string }>("/api/paypal/capture", { authorizationId });
+}
+
+export function voidHold(authorizationId: string) {
+  return post<{ status: string }>("/api/paypal/void", { authorizationId });
+}
+
+export function readResult(): PayPalResult | null {
+  try {
+    const raw = localStorage.getItem(PAYPAL_RESULT_KEY);
+    return raw ? (JSON.parse(raw) as PayPalResult) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearResult() {
+  try {
+    localStorage.removeItem(PAYPAL_RESULT_KEY);
+  } catch {}
+}

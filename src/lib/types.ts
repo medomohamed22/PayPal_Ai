@@ -35,6 +35,12 @@ export interface Offer {
   badges: string[];
   reason?: string;
   score?: number;
+  /** What PayPal will actually charge (EGP is charged in USD). */
+  chargeAmount?: number;
+  chargeCurrency?: string;
+  fxRate?: number;
+  /** Server signature over the offer — checkout refuses tampered offers. */
+  sig?: string;
 }
 
 export type ApprovalStatus =
@@ -70,6 +76,9 @@ export type Block =
       authorizationId?: string;
       holdExpiresAt?: number;
       message?: string;
+      shipping?: { name?: string; address?: string };
+      payerEmail?: string;
+      captureId?: string;
     }
   | { type: "error"; text: string };
 
@@ -101,6 +110,9 @@ export interface Settings {
   city: string;
   lang: Lang;
   demoMode: boolean;
+  /** Spending mandate: max total per purchase in market currency (0 = no limit). */
+  maxSpend: number;
+  verifiedOnly: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -112,7 +124,16 @@ export const DEFAULT_SETTINGS: Settings = {
   city: "Cairo",
   lang: "ar",
   demoMode: false,
+  maxSpend: 0,
+  verifiedOnly: true,
 };
+
+export const HOLD_MINUTES = 10;
+
+export interface Mandate {
+  maxSpend: number;
+  verifiedOnly: boolean;
+}
 
 export const KNOWN_MODELS = [
   "muse-spark-1.3-contributor",

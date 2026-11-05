@@ -4,10 +4,25 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Menu, Moon, PanelLeft, Plus, Settings2, Sun, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { db, loadSettings, requestPersistence, saveSettings, uid } from "@/lib/db";
+import { db, getKV, loadSettings, requestPersistence, saveSettings, setKV, uid } from "@/lib/db";
+import {
+  authorize,
+  capture,
+  CheckoutError,
+  clearResult,
+  createOrder,
+  openPayPalWindow,
+  PAYPAL_RESULT_KEY,
+  readResult,
+  voidHold,
+  type HoldRecord,
+  type PayPalResult,
+  type PendingCheckout,
+} from "@/lib/paypal-client";
 import { t } from "@/lib/i18n";
 import {
   DEFAULT_SETTINGS,
+  HOLD_MINUTES,
   type AgentEvent,
   type Block,
   type ChatMessage,
@@ -278,18 +293,170 @@ export default function App() {
     await db().messages.put({ ...m, blocks });
   };
 
+  /* ---------------- PayPal: approve → hold → (10 min) → capture | void ---------------- */
+
+  const ar = settings.lang === "ar";
+
+  // The result can arrive via postMessage AND the storage event — handle each order once.
+  const handledOrders = useRef(new Set<string>());
+
+  const finishApproval = useCallback(
+    async (result: PayPalResult) => {
+      if (!result?.orderId || handledOrders.current.has(result.orderId)) return;
+      handledOrders.current.add(result.orderId);
+      const pending = await getKV<PendingCheckout>("pendingCheckout");
+      if (!pending || pending.orderId !== result.orderId) return;
+      await setKV("pendingCheckout", null);
+      clearResult();
+      const { msgId, idx } = pending;
+      if (result.kind === "cancelled") {
+        await updateBlock(msgId, idx, { status: "pending", message: undefined });
+        return;
+      }
+      await updateBlock(msgId, idx, { status: "processing" });
+      try {
+        const a = await authorize(result.orderId);
+        const captureAt = Date.now() + HOLD_MINUTES * 60_000;
+        await updateBlock(msgId, idx, {
+          status: "held",
+          orderId: a.orderId,
+          authorizationId: a.authorizationId,
+          holdExpiresAt: captureAt,
+          shipping: a.shipping,
+          payerEmail: a.payerEmail,
+          message: undefined,
+        });
+        const holds = (await getKV<HoldRecord[]>("holds")) ?? [];
+        await setKV("holds", [...holds, { msgId, idx, authorizationId: a.authorizationId, captureAt }]);
+      } catch (e) {
+        await updateBlock(msgId, idx, { status: "error", message: (e as Error).message });
+      }
+    },
+    [],
+  );
+
+  // Receive the PayPal result from the popup (postMessage / storage event) or after a full redirect.
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin === window.location.origin && e.data?.source === "dalil-paypal") finishApproval(e.data);
+    };
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === PAYPAL_RESULT_KEY && e.newValue) finishApproval(JSON.parse(e.newValue));
+    };
+    window.addEventListener("message", onMsg);
+    window.addEventListener("storage", onStorage);
+    const r = readResult();
+    if (r) finishApproval(r);
+    return () => {
+      window.removeEventListener("message", onMsg);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [finishApproval]);
+
+  // Capture holds whose cancel window has passed (while the app is open).
+  useEffect(() => {
+    let running = false;
+    const tick = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const holds = (await getKV<HoldRecord[]>("holds")) ?? [];
+        const due = holds.filter((h) => h.captureAt <= Date.now());
+        if (!due.length) return;
+        for (const h of due) {
+          try {
+            const c = await capture(h.authorizationId);
+            await updateBlock(h.msgId, h.idx, { status: "captured", captureId: c.id });
+          } catch (e) {
+            await updateBlock(h.msgId, h.idx, { status: "error", message: (e as Error).message });
+          }
+        }
+        const left = ((await getKV<HoldRecord[]>("holds")) ?? []).filter(
+          (h) => !due.some((d) => d.authorizationId === h.authorizationId),
+        );
+        await setKV("holds", left);
+      } finally {
+        running = false;
+      }
+    };
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  const dropHold = async (authorizationId?: string) => {
+    const holds = (await getKV<HoldRecord[]>("holds")) ?? [];
+    await setKV("holds", holds.filter((h) => h.authorizationId !== authorizationId));
+  };
+
   const onApproval = async (msgId: string, idx: number, action: ApprovalAction) => {
     if (action === "decline") return updateBlock(msgId, idx, { status: "declined" });
-    // PayPal checkout is wired in the next milestone.
-    await updateBlock(msgId, idx, { status: "processing" });
-    setTimeout(
-      () =>
-        updateBlock(msgId, idx, {
-          status: "error",
-          message: settings.lang === "ar" ? "الدفع بـ PayPal لسه بيتجهز" : "PayPal checkout is not configured yet",
-        }),
-      600,
-    );
+    if (action === "retry") return updateBlock(msgId, idx, { status: "pending", message: undefined });
+
+    // Approve: open the window synchronously (before any await) so popup blockers allow it.
+    const popup = action === "approve" ? openPayPalWindow() : null;
+
+    const m = await db().messages.get(msgId);
+    const block = m?.blocks[idx];
+    if (block?.type !== "approval") {
+      popup?.close();
+      return;
+    }
+
+    if (action === "cancel" || action === "capture") {
+      const authId = block.authorizationId;
+      if (!authId) return;
+      await updateBlock(msgId, idx, { status: "processing" });
+      try {
+        await dropHold(authId);
+        if (action === "cancel") {
+          await voidHold(authId);
+          await updateBlock(msgId, idx, { status: "voided" });
+        } else {
+          const c = await capture(authId);
+          await updateBlock(msgId, idx, { status: "captured", captureId: c.id });
+        }
+      } catch (e) {
+        await updateBlock(msgId, idx, { status: "error", message: (e as Error).message });
+      }
+      return;
+    }
+
+    await updateBlock(msgId, idx, { status: "processing", message: undefined });
+    try {
+      const order = await createOrder(block.offer, { maxSpend: settings.maxSpend, verifiedOnly: settings.verifiedOnly });
+      await setKV("pendingCheckout", { msgId, idx, orderId: order.id } satisfies PendingCheckout);
+      await updateBlock(msgId, idx, { orderId: order.id });
+      if (popup && !popup.closed) {
+        popup.location.href = order.approveUrl;
+        // If the user closes the popup without finishing, restore the buttons.
+        const watch = setInterval(async () => {
+          if (!popup.closed) return;
+          clearInterval(watch);
+          await new Promise((r) => setTimeout(r, 1500));
+          const still = await getKV<PendingCheckout>("pendingCheckout");
+          if (still?.orderId === order.id) {
+            await setKV("pendingCheckout", null);
+            await updateBlock(msgId, idx, { status: "pending" });
+          }
+        }, 700);
+      } else {
+        window.location.href = order.approveUrl; // popup blocked → full redirect; state lives in IndexedDB
+      }
+    } catch (e) {
+      popup?.close();
+      const err = e as CheckoutError;
+      const friendly: Record<string, string> = ar
+        ? {
+            PAYPAL_NOT_CONFIGURED: "الدفع بـ PayPal مش متظبط على السيرفر لسه (PAYPAL_CLIENT_ID / SECRET).",
+            MANDATE_OVER_LIMIT: "اترفض: الإجمالي أعلى من الحد الأقصى اللي حددته في الإعدادات.",
+            MANDATE_UNVERIFIED_STORE: "اترفض: إنت محدد متاجر موثوقة بس.",
+            MANDATE_SUSPICIOUS_STORE: "اترفض: المتجر ده مشبوه.",
+            OFFER_TAMPERED_OR_EXPIRED: "العرض ده قديم أو اتعدّل — اطلب من دليل يدوّر تاني.",
+          }
+        : { PAYPAL_NOT_CONFIGURED: "PayPal is not configured on the server yet (PAYPAL_CLIENT_ID / SECRET)." };
+      await updateBlock(msgId, idx, { status: "error", message: (err.code && friendly[err.code]) || err.message });
+    }
   };
 
   const deleteConversation = async (id: string) => {

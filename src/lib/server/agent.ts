@@ -2,6 +2,7 @@ import "server-only";
 import { browse } from "./browse";
 import { streamChat, webSearch, type ChatMsg, type FunctionTool, type MetaConfig } from "./meta";
 import { rankOffers, type RawOffer } from "./rank";
+import { prepareOffer, prepareOffers } from "./sign";
 import type { AgentEvent, Lang, Market, Offer, Step, WireMessage } from "../types";
 
 const OFFER_SCHEMA = {
@@ -219,7 +220,7 @@ async function execTool(
     }
     case "show_offers": {
       const raw = (Array.isArray(args.offers) ? args.offers : []) as RawOffer[];
-      const ranked = rankOffers(raw, ctx.market);
+      const ranked = prepareOffers(rankOffers(raw, ctx.market));
       if (!ranked.length) throw new Error("no valid offers");
       ctx.emit({ type: "block", block: { type: "products", offers: ranked } });
       return {
@@ -237,8 +238,9 @@ async function execTool(
       };
     }
     case "request_purchase_approval": {
-      const [offer] = rankOffers([args as unknown as RawOffer], ctx.market) as Offer[];
-      if (!offer) throw new Error("invalid offer");
+      const [ranked] = rankOffers([args as unknown as RawOffer], ctx.market) as Offer[];
+      if (!ranked) throw new Error("invalid offer");
+      const offer = prepareOffer(ranked);
       ctx.emit({ type: "block", block: { type: "approval", offer, status: "pending" } });
       return {
         status: "approval_box_shown",

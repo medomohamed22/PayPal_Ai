@@ -19,8 +19,11 @@ import {
   Scale,
   AlertTriangle,
   Camera,
+  Clock,
+  RotateCcw,
+  Lock,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { formatMoney, type Strings } from "@/lib/i18n";
 import type { ApprovalStatus, Lang, LinkPreview, Offer, Step } from "@/lib/types";
 
@@ -389,28 +392,69 @@ export function ProductCards({
 
 /* ---------- Purchase approval ---------- */
 
+function useNow(active: boolean) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  return now;
+}
+
+function HoldCountdown({ until, lang, total }: { until: number; lang: Lang; total: number }) {
+  const now = useNow(true);
+  const left = Math.max(0, until - now);
+  const mm = Math.floor(left / 60000);
+  const ss = Math.floor((left % 60000) / 1000);
+  const pct = Math.max(0, Math.min(100, (left / total) * 100));
+  const clock = `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between text-xs">
+        <span className="inline-flex items-center gap-1.5 text-fg-muted">
+          <Clock className="size-3.5" />
+          {lang === "ar" ? "هيتخصم تلقائيًا بعد" : "Auto-charges in"}
+        </span>
+        <span className="font-mono text-sm font-semibold tabular-nums" dir="ltr">
+          {clock}
+        </span>
+      </div>
+      <div className="h-1 overflow-hidden rounded-full bg-bg-muted">
+        <motion.div className="h-full rounded-full bg-fg" animate={{ width: `${pct}%` }} transition={{ ease: "linear", duration: 1 }} />
+      </div>
+    </div>
+  );
+}
+
 export function ApprovalCard({
   offer,
   status,
   message,
   holdExpiresAt,
+  shipping,
+  payerEmail,
   s,
   lang,
   onApprove,
   onDecline,
   onCancelHold,
   onCaptureNow,
+  onRetry,
 }: {
   offer: Offer;
   status: ApprovalStatus;
   message?: string;
   holdExpiresAt?: number;
+  shipping?: { name?: string; address?: string };
+  payerEmail?: string;
   s: Strings;
   lang: Lang;
   onApprove: () => void;
   onDecline: () => void;
   onCancelHold?: () => void;
   onCaptureNow?: () => void;
+  onRetry?: () => void;
 }) {
   const statusLine: Partial<Record<ApprovalStatus, string>> = {
     processing: s.processing,
@@ -419,6 +463,7 @@ export function ApprovalCard({
     voided: s.voided,
     declined: s.declined,
   };
+  const converted = offer.chargeCurrency && offer.chargeCurrency !== offer.currency && offer.chargeAmount != null;
   return (
     <motion.div
       initial={{ opacity: 0, y: 16, scale: 0.97 }}
@@ -435,6 +480,18 @@ export function ApprovalCard({
       </div>
       <div className="relative">
         <SmartImage src={offer.image} alt={offer.title} fallbackLabel={offer.store} className="h-48 w-full" />
+        <AnimatePresence>
+          {(status === "held" || status === "captured") && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="absolute end-3 top-3 inline-flex items-center gap-1 rounded-full bg-inv-bg px-2.5 py-1 text-[11px] font-semibold text-inv-fg"
+            >
+              {status === "held" ? <Lock className="size-3" /> : <Check className="size-3" />}
+              {status === "held" ? s.held : s.captured}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
       <div className="space-y-3 p-4">
         <div>
@@ -458,10 +515,33 @@ export function ApprovalCard({
             <dt>{s.total}</dt>
             <dd className="tabular-nums">{formatMoney(offer.total, offer.currency, lang)}</dd>
           </div>
+          {converted && (
+            <div className="flex justify-between text-xs text-fg-muted">
+              <dt>{lang === "ar" ? "المبلغ في PayPal" : "Charged via PayPal"}</dt>
+              <dd className="tabular-nums" dir="ltr">
+                {formatMoney(offer.chargeAmount!, offer.chargeCurrency!, "en")}
+                {offer.fxRate ? ` · 1 USD = ${offer.fxRate} ${offer.currency}` : ""}
+              </dd>
+            </div>
+          )}
         </dl>
-        <div className="flex items-center gap-1.5 text-xs text-fg-muted">
-          <Truck className="size-3.5" /> {s.shipTo}
+        <div className="flex items-start gap-1.5 text-xs text-fg-muted">
+          <Truck className="mt-px size-3.5 shrink-0" />
+          {shipping?.address ? (
+            <span dir="auto">
+              <span className="font-medium text-fg-soft">{shipping.name}</span>
+              {shipping.name ? " · " : ""}
+              {shipping.address}
+            </span>
+          ) : (
+            s.shipTo
+          )}
         </div>
+        {payerEmail && (
+          <div className="truncate text-[11px] text-fg-muted" dir="ltr">
+            PayPal · {payerEmail}
+          </div>
+        )}
 
         <AnimatePresence mode="wait">
           {status === "pending" ? (
@@ -489,36 +569,60 @@ export function ApprovalCard({
               <p className="text-center text-[11px] leading-snug text-fg-muted">{s.approveNote}</p>
             </motion.div>
           ) : (
-            <motion.div key="status" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-2">
-              <div
-                className={`flex items-center justify-center gap-2 rounded-2xl py-3 text-sm font-semibold ${
-                  status === "captured" ? "bg-inv-bg text-inv-fg" : "bg-bg-soft"
-                } ${status === "error" ? "text-danger" : ""}`}
-              >
-                {status === "processing" && <Loader2 className="size-4 animate-spin" />}
-                {status === "captured" && <Check className="size-4" />}
-                {statusLine[status] ?? message}
-              </div>
+            <motion.div key={status} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-2.5">
+              {status === "held" && holdExpiresAt && (
+                <HoldCountdown until={holdExpiresAt} lang={lang} total={10 * 60_000} />
+              )}
+              {status !== "held" && (
+                <div
+                  className={`flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-center text-sm font-semibold ${
+                    status === "captured" ? "bg-inv-bg text-inv-fg" : "bg-bg-soft"
+                  } ${status === "error" ? "text-danger" : ""}`}
+                >
+                  {status === "processing" && <Loader2 className="size-4 shrink-0 animate-spin" />}
+                  {status === "captured" && <Check className="size-4 shrink-0" />}
+                  {status === "error" && <AlertTriangle className="size-4 shrink-0" />}
+                  <span>{status === "error" ? message : statusLine[status]}</span>
+                </div>
+              )}
               {status === "held" && (
                 <div className="flex gap-2">
-                  {onCaptureNow && (
-                    <button onClick={onCaptureNow} className="flex-1 rounded-2xl bg-inv-bg py-2.5 text-xs font-semibold text-inv-fg">
-                      {s.confirmCapture}
-                    </button>
-                  )}
                   {onCancelHold && (
-                    <button onClick={onCancelHold} className="flex-1 rounded-2xl border border-line py-2.5 text-xs font-medium">
+                    <motion.button
+                      whileTap={{ scale: 0.97 }}
+                      onClick={onCancelHold}
+                      className="flex-1 rounded-2xl border border-fg py-2.5 text-xs font-semibold"
+                    >
                       {s.cancelHold}
-                    </button>
+                    </motion.button>
+                  )}
+                  {onCaptureNow && (
+                    <motion.button
+                      whileTap={{ scale: 0.97 }}
+                      onClick={onCaptureNow}
+                      className="flex-1 rounded-2xl bg-inv-bg py-2.5 text-xs font-semibold text-inv-fg"
+                    >
+                      {s.confirmCapture}
+                    </motion.button>
                   )}
                 </div>
               )}
-              {holdExpiresAt && status === "held" && (
-                <p className="text-center text-[11px] text-fg-muted">
-                  {new Date(holdExpiresAt).toLocaleTimeString(lang === "ar" ? "ar-EG" : "en-US", { hour: "2-digit", minute: "2-digit" })}
+              {status === "held" && (
+                <p className="text-center text-[11px] leading-snug text-fg-muted">
+                  {lang === "ar"
+                    ? "المبلغ محجوز في PayPal ومتخصمش. تقدر تلغي ويرجع فورًا."
+                    : "Funds are held in PayPal, not charged. Cancel to release them instantly."}
                 </p>
               )}
-              {message && status !== "error" && <p className="text-center text-[11px] text-fg-muted">{message}</p>}
+              {status === "error" && onRetry && (
+                <button
+                  onClick={onRetry}
+                  className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-line py-2.5 text-xs font-medium hover:bg-bg-soft"
+                >
+                  <RotateCcw className="size-3.5" />
+                  {lang === "ar" ? "حاول تاني" : "Try again"}
+                </button>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
