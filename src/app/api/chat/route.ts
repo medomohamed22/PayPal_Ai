@@ -25,6 +25,7 @@ const Body = z.object({
     city: z.string().min(1).max(80),
     lang: z.enum(["ar", "en"]),
     demoMode: z.boolean(),
+    coords: z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }).nullish(),
   }),
 });
 
@@ -72,6 +73,7 @@ export async function POST(req: Request) {
             history,
             market: settings.market,
             city: settings.city,
+            coords: settings.coords ?? undefined,
             lang: settings.lang,
             signal: req.signal,
             emit,

@@ -113,6 +113,8 @@ export interface Settings {
   /** Spending mandate: max total per purchase in market currency (0 = no limit). */
   maxSpend: number;
   verifiedOnly: boolean;
+  /** Optional precise location for distance to pickup stores. */
+  coords?: { lat: number; lon: number } | null;
 }
 
 export const DEFAULT_SETTINGS: Settings = {

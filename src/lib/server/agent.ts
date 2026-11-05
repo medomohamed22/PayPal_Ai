@@ -79,11 +79,11 @@ export const TOOLS: FunctionTool[] = [
   },
 ];
 
-function developerPrompt(market: Market, city: string, lang: Lang): string {
+function developerPrompt(market: Market, city: string, lang: Lang, coords?: { lat: number; lon: number }): string {
   const currency = market === "EG" ? "EGP" : "USD";
   const country = market === "EG" ? "Egypt" : "United States";
   return `You are Dalil, a trustworthy AI shopping agent built on PayPal.
-Today is ${new Date().toISOString().slice(0, 10)}. The user is in ${city}, ${country}. Default currency: ${currency}.
+Today is ${new Date().toISOString().slice(0, 10)}. The user is in ${city}, ${country}${coords ? ` (GPS ${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)} — use it to estimate distanceKm to physical stores)` : ""}. Default currency: ${currency}.
 Reply in ${lang === "ar" ? "Egyptian Arabic" : "English"} unless the user writes in another language. Be brief and friendly; let the cards do the talking.
 
 How to work:
@@ -129,6 +129,7 @@ export interface RunOptions {
   history: WireMessage[];
   market: Market;
   city: string;
+  coords?: { lat: number; lon: number };
   lang: Lang;
   signal?: AbortSignal;
   emit: (e: AgentEvent) => void;
@@ -137,7 +138,7 @@ export interface RunOptions {
 export async function runAgent(opts: RunOptions): Promise<void> {
   const { cfg, market, city, lang, emit, signal } = opts;
   const messages: ChatMsg[] = [
-    { role: "developer", content: developerPrompt(market, city, lang) },
+    { role: "developer", content: developerPrompt(market, city, lang, opts.coords) },
     ...toChatMessages(opts.history),
   ];
 

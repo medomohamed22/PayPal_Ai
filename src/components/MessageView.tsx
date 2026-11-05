@@ -18,7 +18,9 @@ export default function MessageView({
   lang,
   busy,
   onBuy,
+  onWatch,
   onApproval,
+  city,
 }: {
   msg: ChatMessage;
   live: boolean;
@@ -26,6 +28,8 @@ export default function MessageView({
   lang: Lang;
   busy: boolean;
   onBuy: (o: Offer) => void;
+  onWatch?: (o: Offer) => void;
+  city?: string;
   onApproval: (msgId: string, blockIndex: number, action: ApprovalAction) => void;
 }) {
   if (msg.role === "user") {
@@ -93,7 +97,7 @@ export default function MessageView({
                 </div>
               );
             case "products":
-              return <ProductCards key={i} offers={b.offers} s={s} lang={lang} onBuy={onBuy} disabled={busy} />;
+              return <ProductCards key={i} offers={b.offers} s={s} lang={lang} onBuy={onBuy} onWatch={onWatch} disabled={busy} city={city} />;
             case "approval":
               return (
                 <ApprovalCard

@@ -22,6 +22,7 @@ import {
   Clock,
   RotateCcw,
   Lock,
+  BellPlus,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatMoney, type Strings } from "@/lib/i18n";
@@ -250,13 +251,17 @@ export function ProductCards({
   s,
   lang,
   onBuy,
+  onWatch,
   disabled,
+  city,
 }: {
   offers: Offer[];
   s: Strings;
   lang: Lang;
   onBuy?: (o: Offer) => void;
+  onWatch?: (o: Offer) => void;
   disabled?: boolean;
+  city?: string;
 }) {
   const badgeText: Record<string, string> = {
     cheapest: s.cheapest,
@@ -329,11 +334,16 @@ export function ProductCards({
                 </div>
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-fg-muted">
                   {o.distanceKm != null && (
-                    <span className="inline-flex items-center gap-1">
+                    <a
+                      href={`https://www.google.com/maps/search/${encodeURIComponent(`${o.store} ${city ?? ""}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 underline-offset-2 hover:text-fg hover:underline"
+                    >
                       <MapPin className="size-3" />
                       {o.distanceKm.toLocaleString(lang === "ar" ? "ar-EG" : "en-US")} {s.km}
                       {o.pickup ? ` · ${s.pickup}` : ""}
-                    </span>
+                    </a>
                   )}
                   {o.deliveryDays != null && (
                     <span className="inline-flex items-center gap-1">
@@ -369,6 +379,17 @@ export function ProductCards({
                     >
                       {s.view} <ExternalLink className="size-3" />
                     </a>
+                  )}
+                  {onWatch && o.trust !== "suspicious" && (
+                    <motion.button
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => onWatch(o)}
+                      title={lang === "ar" ? "راقب السعر" : "Watch price"}
+                      aria-label={lang === "ar" ? "راقب السعر" : "Watch price"}
+                      className="flex shrink-0 items-center justify-center rounded-xl border border-line px-2.5 transition-colors hover:bg-bg-soft"
+                    >
+                      <BellPlus className="size-3.5" />
+                    </motion.button>
                   )}
                   {onBuy && o.trust !== "suspicious" && (
                     <motion.button

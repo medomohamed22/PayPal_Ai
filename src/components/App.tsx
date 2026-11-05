@@ -220,6 +220,7 @@ export default function App() {
               city: settings.city,
               lang: settings.lang,
               demoMode: settings.demoMode,
+              coords: settings.coords ?? null,
             },
           }),
           signal: ctrl.signal,

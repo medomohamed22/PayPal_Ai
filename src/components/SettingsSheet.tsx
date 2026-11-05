@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Eye, EyeOff, Loader2, RefreshCw, X } from "lucide-react";
+import { Check, Eye, EyeOff, Loader2, MapPin, RefreshCw, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { t } from "@/lib/i18n";
 import { KNOWN_MODELS, type Settings } from "@/lib/types";
@@ -29,6 +29,7 @@ export default function SettingsSheet({
   const [fetching, setFetching] = useState(false);
   const [fetchMsg, setFetchMsg] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [locating, setLocating] = useState(false);
   const s = t(draft.lang);
 
   useEffect(() => {
@@ -218,6 +219,34 @@ export default function SettingsSheet({
                       <option key={c} value={c} />
                     ))}
                   </datalist>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!navigator.geolocation) return;
+                      setLocating(true);
+                      navigator.geolocation.getCurrentPosition(
+                        (p) => {
+                          set("coords", { lat: +p.coords.latitude.toFixed(4), lon: +p.coords.longitude.toFixed(4) });
+                          setLocating(false);
+                        },
+                        () => setLocating(false),
+                        { enableHighAccuracy: false, timeout: 10000 },
+                      );
+                    }}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium hover:bg-bg-soft"
+                  >
+                    {locating ? <Loader2 className="size-3 animate-spin" /> : <MapPin className="size-3" />}
+                    {draft.coords
+                      ? `${isRtl ? "موقعك" : "Location"}: ${draft.coords.lat}, ${draft.coords.lon}`
+                      : isRtl
+                        ? "استخدم موقعي الحالي (لحساب المسافة للمحلات)"
+                        : "Use my location (distance to stores)"}
+                  </button>
+                  {draft.coords && (
+                    <button type="button" onClick={() => set("coords", null)} className="ms-2 text-[11px] text-fg-muted underline">
+                      {isRtl ? "مسح" : "Clear"}
+                    </button>
+                  )}
                 </div>
                 <div>
                   <label className={label}>{s.language}</label>
