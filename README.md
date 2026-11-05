@@ -36,6 +36,19 @@ npm run dev                   # http://localhost:3000
 ```
 Open **Settings** → paste your Meta Model API key (stored only in your browser's IndexedDB) → **Fetch models** → pick a model → **Save**. Or toggle **Demo mode** to try it without a key.
 
+## Deploy on Vercel
+1. Import the repo in Vercel (framework: Next.js, production branch: `main`).
+2. **Settings → Environment Variables** (Production + Preview):
+
+| Name | Value |
+|---|---|
+| `PAYPAL_ENV` | `sandbox` |
+| `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET` | PayPal Developer Dashboard → Apps & Credentials → Sandbox |
+| `OFFER_SIGNING_SECRET` | any long random string (`openssl rand -hex 32`) |
+| `EGP_PER_USD` | e.g. `50` |
+
+3. Redeploy. Check `GET /api/paypal/status` → `{"configured": true, "env": "sandbox"}`.
+
 ## Checkout flow
 ```
 Approve ─► POST /api/paypal/create-order   (verify signature + mandate → Orders v2, intent=AUTHORIZE)
