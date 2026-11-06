@@ -17,8 +17,24 @@ interface KV {
   incr(key: string, ttlSec: number): Promise<number>;
 }
 
-const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+/**
+ * Vercel's Upstash integration may add a custom prefix (e.g. STORAGE_KV_REST_API_URL),
+ * so accept any variable that ends with the standard names.
+ */
+function envBySuffix(...suffixes: string[]): string | undefined {
+  for (const sfx of suffixes) {
+    if (process.env[sfx]) return process.env[sfx];
+    const k = Object.keys(process.env).find((n) => n.endsWith("_" + sfx) && process.env[n]);
+    if (k) return process.env[k];
+  }
+  return undefined;
+}
+const url = envBySuffix("UPSTASH_REDIS_REST_URL", "KV_REST_API_URL");
+// Never use the read-only token.
+const token = envBySuffix("UPSTASH_REDIS_REST_TOKEN", "KV_REST_API_TOKEN");
+
+/** Names (never values) of storage-looking variables — for diagnostics. */
+export const storageEnvNames = Object.keys(process.env).filter((n) => /REDIS|KV_|UPSTASH/.test(n)).sort();
 
 export const storePersistent = !!(url && token);
 
