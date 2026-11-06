@@ -20,6 +20,8 @@ export class PayPalError extends Error {
     public status = 500,
     public code = "PAYPAL_ERROR",
     public debugId?: string,
+    /** JSON pointer of the rejected field, e.g. /purchase_units/0/items/0/url */
+    public field?: string,
   ) {
     super(message);
   }
@@ -74,6 +76,7 @@ async function pp<T = Record<string, unknown>>(
       res.status,
       detail?.issue ?? json?.name ?? "PAYPAL_ERROR",
       json?.debug_id,
+      detail?.field,
     );
   }
   return json as T;
@@ -194,6 +197,7 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
     if (!(e instanceof PayPalError) || (e.status !== 400 && e.status !== 422)) throw e;
     const it = body.purchase_units[0].items[0] as Record<string, unknown>;
     if (!("url" in it) && !("image_url" in it)) throw e;
+    console.warn(`[paypal] create order rejected (${e.code} ${e.field ?? ""} debug_id=${e.debugId}); retrying without item url/image`);
     delete it.url;
     delete it.image_url;
     order = await pp<Created>("/v2/checkout/orders", {
