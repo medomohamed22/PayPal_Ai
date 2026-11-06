@@ -122,6 +122,10 @@ export default function MessageView({
                   onApprove={() => onApproval(msg.id, i, "approve")}
                   onDecline={() => onApproval(msg.id, i, "decline")}
                   negotiation={b.negotiation}
+                  context={b.context}
+                  mandate={b.mandate}
+                  orderId={b.orderId}
+                  captureId={b.captureId}
                   onNegotiate={() => onApproval(msg.id, i, "negotiate")}
                   onCancelHold={() => onApproval(msg.id, i, "cancel")}
                   onCaptureNow={() => onApproval(msg.id, i, "capture")}

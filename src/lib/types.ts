@@ -87,6 +87,11 @@ export type Block =
       watchId?: string;
       tracking?: { trackingNumber: string; carrier: string; addedAt: number };
       refund?: { id: string; status: string; reason: string; amount?: string; currency?: string };
+      /** What this offer was compared against (for the trust receipt and savings). */
+      context?: PurchaseContext;
+      /** Spending mandate in force when the user approved. */
+      mandate?: { maxSpend: number; verifiedOnly: boolean };
+      capturedAt?: number;
     }
   | { type: "watchDraft"; offer: Offer; targetPrice?: number; mode?: WatchMode }
   | { type: "error"; text: string }
@@ -251,4 +256,34 @@ export interface Negotiation {
   original: { price: number; shipping: number; total: number };
   saved?: number;
   transport?: "http" | "local";
+}
+
+export interface PurchaseContext {
+  /** Offers compared in the same reply (all, including flagged ones). */
+  compared: number;
+  stores: number;
+  /** Average / highest total of the trustworthy offers in the same currency. */
+  avgTotal: number;
+  maxTotal: number;
+  /** 1-based position of this offer in Dalil's ranking. */
+  rank?: number;
+  flaggedSkipped: number;
+}
+
+/** Comparison context for an offer, from the product lists it appeared in. */
+export function purchaseContext(offer: Offer, lists: Offer[][]): PurchaseContext | undefined {
+  const list = lists.find((l) => l.some((o) => o.id === offer.id || (o.store === offer.store && o.title === offer.title))) ?? lists[lists.length - 1];
+  if (!list?.length) return undefined;
+  const fair = list.filter((o) => o.trust !== "suspicious" && o.currency === offer.currency);
+  const totals = fair.map((o) => o.total);
+  if (!totals.length) return undefined;
+  const idx = list.findIndex((o) => o.id === offer.id || (o.store === offer.store && o.title === offer.title));
+  return {
+    compared: list.length,
+    stores: new Set(list.map((o) => o.store)).size,
+    avgTotal: Math.round((totals.reduce((a, b) => a + b, 0) / totals.length) * 100) / 100,
+    maxTotal: Math.max(...totals),
+    rank: idx >= 0 ? idx + 1 : undefined,
+    flaggedSkipped: list.filter((o) => o.trust === "suspicious" || o.flags.includes("suspicious_discount")).length,
+  };
 }

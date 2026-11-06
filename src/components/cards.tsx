@@ -33,7 +33,8 @@ import { useEffect, useState } from "react";
 import { formatMoney, type Strings } from "@/lib/i18n";
 import PayLaterMessage from "./PayLater";
 import { NegotiationPanel } from "./Negotiation";
-import type { ApprovalStatus, Block, Lang, LinkPreview, Negotiation, Offer, Step } from "@/lib/types";
+import { TrustReceipt } from "./Receipt";
+import type { ApprovalStatus, Block, Lang, LinkPreview, Negotiation, Offer, PurchaseContext, Step } from "@/lib/types";
 
 /* ---------- Image with graceful fallback ---------- */
 
@@ -946,7 +947,15 @@ export function ApprovalCard({
   onRefund,
   negotiation,
   onNegotiate,
+  context,
+  mandate,
+  orderId,
+  captureId,
 }: {
+  context?: PurchaseContext;
+  mandate?: { maxSpend: number; verifiedOnly: boolean };
+  orderId?: string;
+  captureId?: string;
   negotiation?: Negotiation;
   onNegotiate?: () => void;
   offer: Offer;
@@ -1158,6 +1167,18 @@ export function ApprovalCard({
                   <RotateCcw className="size-3.5" />
                   {lang === "ar" ? "حاول تاني" : "Try again"}
                 </button>
+              )}
+              {status === "captured" && (
+                <TrustReceipt
+                  offer={offer}
+                  lang={lang}
+                  context={context}
+                  mandate={mandate}
+                  negotiation={negotiation}
+                  orderId={orderId}
+                  captureId={captureId}
+                  refunded={!!refund}
+                />
               )}
               {status === "captured" && (
                 <AfterCare lang={lang} tracking={tracking} refund={refund} onTrack={onTrack} onRefund={onRefund} />

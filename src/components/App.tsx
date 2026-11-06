@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Bell, Menu, Moon, PanelLeft, Plus, Settings2, Sun, Trash2, X } from "lucide-react";
+import { Bell, Menu, Moon, PanelLeft, PiggyBank, Plus, Settings2, Sun, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { db, getKV, loadSettings, requestPersistence, saveSettings, setKV, uid } from "@/lib/db";
 import {
@@ -34,11 +34,13 @@ import {
   type WireMessage,
   type Negotiation,
   type NegotiationEvent,
+  purchaseContext,
 } from "@/lib/types";
 import Composer, { type ComposerPayload } from "./Composer";
 import Logo from "./Logo";
 import MessageView, { type ApprovalAction } from "./MessageView";
 import SettingsSheet from "./SettingsSheet";
+import SavingsPanel from "./Savings";
 import { Toasts, WatchesPanel, WatchSheet, type Toast } from "./Watches";
 import { enableNotifications, localNotify, registerServiceWorker, watchApi } from "@/lib/watch-client";
 
@@ -112,8 +114,13 @@ function applyEvent(blocks: Block[], e: AgentEvent): Block[] {
       e.block.type === "products" || e.block.type === "browser" || e.block.type === "insight"
         ? next.findIndex((b) => b.type === e.block.type)
         : -1;
-    if (at >= 0) next[at] = e.block;
-    else next.push(e.block);
+    let block = e.block;
+    if (block.type === "approval" && !block.context) {
+      const lists = next.flatMap((b) => (b.type === "products" ? [b.offers] : []));
+      block = { ...block, context: purchaseContext(block.offer, lists) };
+    }
+    if (at >= 0) next[at] = block;
+    else next.push(block);
   } else if (e.type === "browserDone") {
     return next.map((b) => (b.type === "browser" ? { ...b, live: false } : b));
   } else if (e.type === "error") {
@@ -136,6 +143,7 @@ export default function App() {
   const [vaultConnected, setVaultConnected] = useState(false);
   const [storePersistent, setStorePersistent] = useState<boolean | null>(null);
   const [watchesOpen, setWatchesOpen] = useState(false);
+  const [savingsOpen, setSavingsOpen] = useState(false);
   const [watchDraft, setWatchDraft] = useState<{ offer: Offer; targetPrice?: number; mode?: WatchMode } | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   /** Server-provided AI key for visitors without their own (rate-limited). */
@@ -329,11 +337,13 @@ export default function App() {
   /** Clicking "Buy" on a product card opens an approval box directly (no LLM round-trip). */
   const onBuy = async (offer: Offer) => {
     if (!convId) return;
+    const msgs = await db().messages.where("conversationId").equals(convId).sortBy("createdAt");
+    const lists = msgs.flatMap((m) => m.blocks.flatMap((b) => (b.type === "products" ? [b.offers] : [])));
     await db().messages.put({
       id: uid(),
       conversationId: convId,
       role: "assistant",
-      blocks: [{ type: "approval", offer, status: "pending" }],
+      blocks: [{ type: "approval", offer, status: "pending", context: purchaseContext(offer, lists) }],
       createdAt: Date.now(),
     });
   };
@@ -344,7 +354,7 @@ export default function App() {
     const blocks = [...m.blocks];
     const b = blocks[idx];
     if (b?.type !== "approval") return;
-    blocks[idx] = { ...b, ...patch };
+    blocks[idx] = { ...b, ...patch, ...(patch.status === "captured" && !b.capturedAt ? { capturedAt: Date.now() } : {}) };
     await db().messages.put({ ...m, blocks });
     if (patch.status === "captured" && b.watchId) {
       watchApi.action(b.watchId, "purchased").then(({ watch }) => mergeWatch(watch)).catch(() => undefined);
@@ -738,6 +748,7 @@ export default function App() {
     await updateBlock(msgId, idx, { status: "processing", message: undefined });
     try {
       const order = await createOrder(block.offer, { maxSpend: settings.maxSpend, verifiedOnly: settings.verifiedOnly });
+      await updateBlock(msgId, idx, { mandate: { maxSpend: settings.maxSpend, verifiedOnly: settings.verifiedOnly } });
       await setKV("pendingCheckout", { msgId, idx, orderId: order.id } satisfies PendingCheckout);
       await updateBlock(msgId, idx, { orderId: order.id });
       if (popup && !popup.closed) {
@@ -837,6 +848,16 @@ export default function App() {
         </AnimatePresence>
       </nav>
       <div className="border-t border-line p-2">
+        <button
+          onClick={() => {
+            setSavingsOpen(true);
+            setSidebarOpen(false);
+          }}
+          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm hover:bg-bg-muted"
+        >
+          <PiggyBank className="size-4" />
+          {ar ? "مشترياتي وتوفيري" : "Purchases & savings"}
+        </button>
         <button
           onClick={() => {
             setWatchesOpen(true);
@@ -1004,6 +1025,13 @@ export default function App() {
         </div>
       </main>
 
+      <SavingsPanel
+        open={savingsOpen}
+        lang={settings.lang}
+        market={settings.market}
+        onClose={() => setSavingsOpen(false)}
+        onOpenChat={(id) => setConvId(id)}
+      />
       <SettingsSheet open={settingsOpen} settings={settings} onClose={() => setSettingsOpen(false)} onSave={onSaveSettings} />
       <WatchSheet
         offer={watchDraft?.offer ?? null}

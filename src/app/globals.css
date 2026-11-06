@@ -227,6 +227,20 @@ html[dir="rtl"] .shimmer {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
   30% { transform: translateY(-3px); opacity: 1; }
 }
+.savings-shine {
+  background: linear-gradient(110deg, transparent 30%, color-mix(in srgb, var(--inv-fg, #fff) 14%, transparent) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: savings-shine 3.2s ease-in-out 0.6s infinite;
+}
+@keyframes savings-shine {
+  60%, 100% { transform: translateX(100%); }
+}
+.savings-grid .ag-row {
+  cursor: pointer;
+}
+.savings-grid .ag-layout-auto-height {
+  min-height: 0 !important;
+}
 .logo-rest {
   transform: rotate(0deg);
   transition: transform 0.4s ease-out;
