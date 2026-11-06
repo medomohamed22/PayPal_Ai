@@ -96,9 +96,9 @@ export function InsightCard({
     i.source === "sample"
       ? ar ? "بيانات تجريبية" : "Sample data"
       : i.source === "channel3"
-        ? ar ? `تاريخ السعر من Channel3 · ${n(i.stats.points, ar)} نقطة` : `Price history from Channel3 · ${i.stats.points} points`
+        ? ar ? `تاريخ السعر من Channel3 · ${n(i.stats.points, ar)} نقطة` : `Price history from Channel3 · ${i.stats.points} point${i.stats.points === 1 ? "" : "s"}`
         : i.source === "dalil"
-          ? ar ? `أسعار رصدها دليل · ${n(i.stats.points, ar)} نقطة` : `Prices tracked by Dalil · ${i.stats.points} points`
+          ? ar ? `أسعار رصدها دليل · ${n(i.stats.points, ar)} نقطة` : `Prices tracked by Dalil · ${i.stats.points} point${i.stats.points === 1 ? "" : "s"}`
           : null;
 
   return (

@@ -1,7 +1,7 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
 import { authorizeOrder, captureAuthorization, createOrder, PayPalError, toChargeable, voidAuthorization } from "./paypal";
-import { kv } from "./store";
+import { kv, storePersistent } from "./store";
 import type { GroupView, Offer } from "../types";
 
 /**
@@ -105,6 +105,14 @@ async function release(r: GroupRecord, status: "cancelled" | "expired") {
 }
 
 export async function createGroup(device: string, offer: Offer, shares: number): Promise<GroupView> {
+  // Serverless instances don't share memory: without Redis, friends would hit "group not found".
+  if (!storePersistent && process.env.VERCEL) {
+    throw new GroupError(
+      "Group buy needs the shared database (Upstash Redis), which isn't connected on this deployment yet.",
+      503,
+      "STORAGE_NOT_CONFIGURED",
+    );
+  }
   if (offer.trust === "suspicious") throw new GroupError("Can't group-buy from a suspicious store", 403, "SUSPICIOUS");
   if (!(shares >= 2 && shares <= 6)) throw new GroupError("2–6 people");
   const charge = toChargeable(offer.total, offer.currency);
