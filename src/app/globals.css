@@ -186,6 +186,31 @@ html[dir="rtl"] .shimmer {
 @keyframes live-dot {
   50% { opacity: 0.25; }
 }
+.voice-bar {
+  height: 14px;
+  transform-origin: center;
+  animation: voice-bar 0.9s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes voice-bar {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+.voice-ring {
+  animation: voice-ring 1.4s ease-out infinite;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--fg) 35%, transparent);
+}
+@keyframes voice-ring {
+  to { box-shadow: 0 0 0 12px transparent; }
+}
+.scan-laser {
+  top: 0;
+  animation: scan-laser 1.8s ease-in-out infinite alternate;
+}
+@keyframes scan-laser {
+  from { top: 4%; }
+  to { top: 94%; }
+}
 .logo-rest {
   transform: rotate(0deg);
   transition: transform 0.4s ease-out;

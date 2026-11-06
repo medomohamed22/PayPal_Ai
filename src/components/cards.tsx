@@ -24,6 +24,7 @@ import {
   Lock,
   BellPlus,
   PackageSearch,
+  ScanBarcode,
   MousePointerClick,
   AppWindow,
 } from "lucide-react";
@@ -117,6 +118,7 @@ export function LinkCard({ preview, lang }: { preview: LinkPreview; lang: Lang }
 
 const STEP_ICON: Record<string, typeof Search> = {
   web_search: Search,
+  lookup_barcode: ScanBarcode,
   catalog_search: PackageSearch,
   browse_url: Globe,
   browser_open: AppWindow,
@@ -130,6 +132,7 @@ const STEP_ICON: Record<string, typeof Search> = {
 export function stepLabel(tool: string, s: Strings, lang: Lang): string {
   const ar: Record<string, string> = {
     web_search: "بيبحث في الويب",
+    lookup_barcode: "بيتعرف على المنتج من الباركود",
     catalog_search: "بيدوّر في كتالوج ١٠٠ مليون منتج",
     browse_url: "بيتصفح",
     browser_open: "بيفتح الصفحة في متصفح حقيقي",
@@ -141,6 +144,7 @@ export function stepLabel(tool: string, s: Strings, lang: Lang): string {
   };
   const en: Record<string, string> = {
     web_search: "Searching the web",
+    lookup_barcode: "Identifying product from barcode",
     catalog_search: "Searching a 100M-product catalog",
     browse_url: "Browsing",
     browser_open: "Opening in a real browser",

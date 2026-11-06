@@ -1,5 +1,6 @@
 import "server-only";
 import { browse } from "./browse";
+import { lookupBarcode } from "./barcode";
 import { BrowserSession, browserAvailable, type PageState } from "./browser";
 import { catalogSearch, channel3Enabled } from "./channel3";
 import { streamChat, webSearch, type ChatMsg, type FunctionTool, type MetaConfig } from "./meta";
@@ -75,6 +76,15 @@ const BROWSER_TOOLS: FunctionTool[] = [
 ];
 
 export const TOOLS: FunctionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "lookup_barcode",
+      description:
+        "Identify a product from its EAN/UPC barcode number (the user scanned it in a store). Returns the product name/brand when known. Then search for the best price of that exact product.",
+      parameters: { type: "object", properties: { code: { type: "string" } }, required: ["code"] },
+    },
+  },
   {
     type: "function",
     function: {
@@ -158,7 +168,7 @@ Today is ${new Date().toISOString().slice(0, 10)}. The user is in ${city}, ${cou
 Reply in ${lang === "ar" ? "Egyptian Arabic" : "English"} unless the user writes in another language. Be brief and friendly; let the cards do the talking. Do not narrate your steps ("I'm searching…") — the UI already shows progress.
 
 How to work:
-1. Identify the exact product. If the user sent a photo, identify brand/model/variant from it. If they sent a link, browse it first.
+1. Identify the exact product. If the message contains a scanned barcode (8-14 digits), call lookup_barcode first; if it returns no title, web_search the code itself. If the user sent a photo, identify brand/model/variant from it. If they sent a link, browse it first.
 2. Be fast but thorough. Start with ONE web_search call carrying 2-3 different queries (official store, big marketplaces, local shops in ${city}). Search results often already contain prices — use them. Browse only pages whose price/image is missing, several in ONE turn (they run in parallel). If a page is blocked or errors, do NOT retry it — rely on search-result prices. You may search again with new angles if results are thin. Prefer official and well-known retailers in ${country}. Compare the TOTAL cost (price + shipping). Include nearby physical stores with distance when known. Each tool result ends with the time left; when it is under 15s, finish.
 ${catalog ? "   US catalog: in your FIRST turn call catalog_search (instant prices, images, ratings across major US retailers; use_photo=true when the user sent a photo) together with web_search for anything the catalog may miss. Catalog offers are verified data — prefer them over browsing.\n" : ""}   Real browser: browse_url is a fast plain fetch. When it returns no price, gets blocked, or the page needs JavaScript, use browser_open (a real Chromium) on the 1-2 most promising product pages; use browser_action to pick variants, open "all offers", or use a site's own search box. Before calling request_purchase_approval for a price that came only from search results, verify it with browser_open when time allows.
 3. Call show_offers as soon as you have 2+ real offers — the user sees them immediately — and call it again later with a better/larger list if you keep searching (it replaces the cards). 2-8 real offers. Never invent URLs, prices, ratings or stores — only use facts from tool results. If a fact is unknown, omit it.
@@ -294,7 +304,8 @@ export async function runAgent(opts: RunOptions): Promise<void> {
           }
           if (call.name === "browse_url" || call.name === "browser_open") step.detail = hostOf(String(args.url ?? ""));
           if (call.name === "browser_action") step.detail = clip(`${args.action}${args.id != null ? ` #${args.id}` : ""}${args.text ? ` "${args.text}"` : ""}`, 60);
-          if (call.name === "catalog_search") step.detail = clip(String(args.query ?? (args.use_photo ? "📷" : "")), 90);
+          if (call.name === "lookup_barcode") step.detail = String(args.code ?? "");
+        if (call.name === "catalog_search") step.detail = clip(String(args.query ?? (args.use_photo ? "📷" : "")), 90);
           emit({ type: "step", step });
           try {
             const output = await execTool(call.name, args, { cfg, market, emit, signal, pages, state, photo, browser, viaBrowser });
@@ -367,6 +378,8 @@ async function execTool(
     };
   };
   switch (name) {
+    case "lookup_barcode":
+      return lookupBarcode(String(args.code ?? ""), ctx.signal);
     case "browser_open": {
       if (!ctx.browser || !ctx.viaBrowser) throw new Error("browser unavailable");
       const url = String(args.url ?? "");

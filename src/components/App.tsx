@@ -939,7 +939,7 @@ export default function App() {
 
         <div className="shrink-0 bg-gradient-to-t from-bg via-bg to-transparent px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-4">
           <div className="mx-auto max-w-3xl">
-            <Composer s={s} busy={busy} onSend={send} onStop={() => abortRef.current?.abort()} prefill={prefill} />
+            <Composer s={s} lang={settings.lang} busy={busy} onSend={send} onStop={() => abortRef.current?.abort()} prefill={prefill} />
             <p className="mt-2 text-center text-[11px] text-fg-muted">{s.tagline} · PayPal</p>
           </div>
         </div>

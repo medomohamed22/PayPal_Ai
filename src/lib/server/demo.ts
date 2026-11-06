@@ -2,6 +2,7 @@ import "server-only";
 import { rankOffers, type RawOffer } from "./rank";
 import { prepareOffers } from "./sign";
 import { formatMoney } from "../i18n";
+import { barcodeIn } from "./barcode";
 import type { AgentEvent, Lang, Market, Step } from "../types";
 
 /**
@@ -11,6 +12,8 @@ import type { AgentEvent, Lang, Market, Step } from "../types";
  */
 interface DemoProduct {
   keys: string[];
+  /** Sample EAN-13 codes that map to this product in demo mode. */
+  barcodes?: string[];
   name: string;
   offers: Record<Market, RawOffer[]>;
 }
@@ -33,6 +36,7 @@ const s = (store: string, q: string) => {
 const CATALOG: DemoProduct[] = [
   {
     keys: ["iphone", "ايفون", "آيفون"],
+    barcodes: ["0195950000016"],
     name: "iPhone 17 Pro 256GB",
     offers: {
       EG: [
@@ -52,6 +56,7 @@ const CATALOG: DemoProduct[] = [
   },
   {
     keys: ["airpods", "ايربودز", "سماعة"],
+    barcodes: ["0195949000010"],
     name: "AirPods Pro 3",
     offers: {
       EG: [
@@ -70,6 +75,7 @@ const CATALOG: DemoProduct[] = [
   },
   {
     keys: ["air fryer", "قلاية", "fryer"],
+    barcodes: ["8710103000013"],
     name: "Air fryer",
     offers: {
       EG: [
@@ -105,9 +111,12 @@ export async function runDemo(opts: {
   emit: (e: AgentEvent) => void;
 }): Promise<void> {
   const { market, city, lang, emit, signal } = opts;
-  const q = opts.text.toLowerCase();
+  const code = barcodeIn(opts.text);
+  const q = (code ? opts.text.replace(/[\d٠-٩ ]{8,}/g, " ") : opts.text).toLowerCase();
   const product =
-    CATALOG.find((p) => p.keys.some((k) => q.includes(k))) ?? (opts.hasImage ? CATALOG[1] : CATALOG[0]);
+    (code ? CATALOG.find((p) => p.barcodes?.includes(code)) : undefined) ??
+    CATALOG.find((p) => p.keys.some((k) => q.includes(k))) ??
+    (code || opts.hasImage ? CATALOG[1] : CATALOG[0]);
   const wantsWatch = /watch|track|راقب|تابع|لو نزل|if it drops|under|تحت/.test(q);
   const wantsBuy = /\b(buy|order|purchase)\b|اشتري|اشتريه|اطلب/.test(q) && !wantsWatch;
   const wantsAuto = wantsWatch && /\b(buy|auto)\b|اشتري|اشتريها|اشتريه|تلقائي/.test(q);
@@ -127,6 +136,7 @@ export async function runDemo(opts: {
   };
 
   const steps: Array<Omit<Step, "status">> = [
+    ...(code ? [{ id: "db", tool: "lookup_barcode", label: "lookup_barcode", detail: `${code} → ${product.name}` }] : []),
     ...(opts.hasImage ? [{ id: "d0", tool: "identify_image", label: "identify_image", detail: product.name }] : []),
     { id: "d1", tool: "web_search", label: "web_search", detail: `${product.name} price ${city}` },
     ...product.offers[market].slice(0, 3).map((o, i) => ({

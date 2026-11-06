@@ -1,10 +1,11 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowUp, ImagePlus, Link2, Loader2, Square, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowUp, ImageIcon, Link2, Loader2, Mic, Plus, ScanBarcode, Square, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Strings } from "@/lib/i18n";
-import type { LinkPreview } from "@/lib/types";
+import type { Lang, LinkPreview } from "@/lib/types";
+import ScannerSheet from "./Scanner";
 
 const URL_RE = /https?:\/\/[^\s<>"']+/g;
 
@@ -25,14 +26,34 @@ export interface ComposerPayload {
   links: LinkPreview[];
 }
 
+/* ---- Voice input (Web Speech API) ---- */
+type Rec = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((e: { error: string }) => void) | null;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+};
+function speechCtor(): (new () => Rec) | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as { SpeechRecognition?: new () => Rec; webkitSpeechRecognition?: new () => Rec };
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
 export default function Composer({
   s,
+  lang,
   busy,
   onSend,
   onStop,
   prefill,
 }: {
   s: Strings;
+  lang: Lang;
   busy: boolean;
   onSend: (p: ComposerPayload) => void;
   onStop: () => void;
@@ -44,6 +65,16 @@ export default function Composer({
   const [drag, setDrag] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [menu, setMenu] = useState(false);
+  const [scan, setScan] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [voiceOk, setVoiceOk] = useState(false);
+  const [voiceErr, setVoiceErr] = useState("");
+  const recRef = useRef<Rec | null>(null);
+  const heardRef = useRef("");
+  const ar = lang === "ar";
+
+  useEffect(() => setVoiceOk(!!speechCtor()), []);
 
   useEffect(() => {
     if (prefill) {
@@ -83,6 +114,70 @@ export default function Composer({
     const out = await Promise.all(list.map((f) => compressImage(f)));
     setImages((x) => [...x, ...out].slice(0, 4));
   }
+
+  function startVoice() {
+    const Ctor = speechCtor();
+    if (!Ctor || busy) return;
+    setVoiceErr("");
+    const rec = new Ctor();
+    rec.lang = ar ? "ar-EG" : "en-US";
+    rec.interimResults = true;
+    rec.continuous = false;
+    heardRef.current = "";
+    rec.onresult = (e) => {
+      let finalText = "";
+      let interim = "";
+      for (let i = 0; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) finalText += r[0].transcript;
+        else interim += r[0].transcript;
+      }
+      heardRef.current = (finalText || interim).trim();
+      setText(heardRef.current);
+    };
+    rec.onerror = (e) => {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed")
+        setVoiceErr(ar ? "اسمح للموقع يستخدم المايك من إعدادات المتصفح" : "Allow microphone access in your browser settings");
+      else if (e.error !== "aborted" && e.error !== "no-speech") setVoiceErr(ar ? "مقدرتش أسمعك، جرّب تاني" : "Couldn't hear you — try again");
+    };
+    rec.onend = () => {
+      setListening(false);
+      recRef.current = null;
+      // Hands-free: send what was heard.
+      const heard = heardRef.current;
+      if (heard) {
+        onSend({ text: heard, images, links: [] });
+        setText("");
+        setImages([]);
+      }
+    };
+    recRef.current = rec;
+    try {
+      rec.start();
+      setListening(true);
+      navigator.vibrate?.(20);
+    } catch {
+      setListening(false);
+    }
+  }
+
+  function stopVoice() {
+    recRef.current?.stop();
+  }
+
+  useEffect(() => () => recRef.current?.abort(), []);
+
+  const onCode = useCallback(
+    (code: string) => {
+      setScan(false);
+      onSend({
+        text: ar ? `باركود: ${code} — لاقيلي أرخص سعر للمنتج ده` : `Barcode: ${code} — find me the best price for this product`,
+        images: [],
+        links: [],
+      });
+    },
+    [ar, onSend],
+  );
 
   function send() {
     if (busy) return;
@@ -180,20 +275,60 @@ export default function Composer({
             e.target.value = "";
           }}
         />
-        <button
-          onClick={() => fileRef.current?.click()}
-          className="mb-0.5 shrink-0 rounded-full p-2.5 text-fg-muted transition-colors hover:bg-bg-soft hover:text-fg"
-          aria-label={s.attach}
-          title={s.attach}
-        >
-          <ImagePlus className="size-5" strokeWidth={1.75} />
-        </button>
+        <div className="relative mb-0.5 shrink-0">
+          <motion.button
+            onClick={() => setMenu((m) => !m)}
+            animate={{ rotate: menu ? 45 : 0 }}
+            className="rounded-full p-2.5 text-fg-muted transition-colors hover:bg-bg-soft hover:text-fg"
+            aria-label={s.attach}
+            aria-expanded={menu}
+            title={s.attach}
+          >
+            <Plus className="size-5" strokeWidth={1.75} />
+          </motion.button>
+          <AnimatePresence>
+            {menu && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setMenu(false)} />
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                  transition={{ duration: 0.16 }}
+                  className="absolute bottom-full start-0 z-20 mb-2 w-52 overflow-hidden rounded-2xl border border-line bg-bg p-1 shadow-card"
+                >
+                  {[
+                    { icon: ImageIcon, label: ar ? "صورة منتج" : "Product photo", sub: ar ? "من المعرض أو الكاميرا" : "From gallery or camera", act: () => fileRef.current?.click() },
+                    { icon: ScanBarcode, label: ar ? "مسح باركود" : "Scan barcode", sub: ar ? "في المحل؟ قارن أونلاين" : "In a store? Compare online", act: () => setScan(true) },
+                  ].map((it) => (
+                    <button
+                      key={it.label}
+                      onClick={() => {
+                        setMenu(false);
+                        it.act();
+                      }}
+                      className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-start hover:bg-bg-soft"
+                    >
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-bg-soft">
+                        <it.icon className="size-4" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium">{it.label}</span>
+                        <span className="block truncate text-[11px] text-fg-muted">{it.sub}</span>
+                      </span>
+                    </button>
+                  ))}
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </div>
         <textarea
           ref={taRef}
           rows={1}
           dir="auto"
           value={text}
-          placeholder={s.placeholder}
+          placeholder={listening ? (ar ? "سامعك… اتكلم" : "Listening… speak now") : s.placeholder}
           onChange={(e) => setText(e.target.value)}
           onPaste={(e) => {
             const files = Array.from(e.clipboardData.files);
@@ -223,6 +358,35 @@ export default function Composer({
             >
               <Square className="size-4 fill-current" />
             </motion.button>
+          ) : listening ? (
+            <motion.button
+              key="listening"
+              initial={{ scale: 0.6, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.6, opacity: 0 }}
+              onClick={stopVoice}
+              className="relative mb-0.5 flex h-10 shrink-0 items-center gap-[3px] rounded-full bg-inv-bg px-3 text-inv-fg"
+              aria-label={ar ? "إيقاف التسجيل" : "Stop listening"}
+            >
+              <span className="voice-ring absolute inset-0 rounded-full" />
+              {[0, 1, 2, 3, 4].map((i) => (
+                <span key={i} className="voice-bar w-[3px] rounded-full bg-current" style={{ animationDelay: `${i * 0.12}s` }} />
+              ))}
+            </motion.button>
+          ) : !canSend && voiceOk ? (
+            <motion.button
+              key="mic"
+              initial={{ scale: 0.6, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.6, opacity: 0 }}
+              whileTap={{ scale: 0.9 }}
+              onClick={startVoice}
+              className="mb-0.5 shrink-0 rounded-full bg-inv-bg p-2.5 text-inv-fg"
+              aria-label={ar ? "اتكلم" : "Speak"}
+              title={ar ? "اطلب بصوتك" : "Ask by voice"}
+            >
+              <Mic className="size-4" strokeWidth={2.25} />
+            </motion.button>
           ) : (
             <motion.button
               key="send"
@@ -240,6 +404,20 @@ export default function Composer({
           )}
         </AnimatePresence>
       </div>
+      <AnimatePresence>
+        {voiceErr && (
+          <motion.p
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="px-4 pb-2 text-xs text-danger"
+            onClick={() => setVoiceErr("")}
+          >
+            {voiceErr}
+          </motion.p>
+        )}
+      </AnimatePresence>
+      <ScannerSheet open={scan} lang={lang} onClose={() => setScan(false)} onCode={onCode} />
     </div>
   );
 }
