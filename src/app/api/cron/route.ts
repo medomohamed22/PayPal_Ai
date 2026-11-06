@@ -1,4 +1,5 @@
 import { runAll } from "@/lib/server/watches";
+import { expireGroups } from "@/lib/server/groups";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -16,5 +17,6 @@ export async function GET(req: Request) {
   }
   const started = Date.now();
   const result = await runAll();
-  return Response.json({ ...result, ms: Date.now() - started });
+  const groupsExpired = await expireGroups().catch(() => 0);
+  return Response.json({ ...result, groupsExpired, ms: Date.now() - started });
 }

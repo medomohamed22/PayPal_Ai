@@ -118,6 +118,8 @@ export interface OrderInput {
   cancelUrl: string;
   /** Save the buyer's PayPal wallet (Vault) for future auto-buys. */
   vault?: boolean;
+  /** Don't collect a shipping address (e.g. a friend's share of a group buy). */
+  noShipping?: boolean;
 }
 
 export interface CreatedOrder {
@@ -176,7 +178,7 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
       paypal: {
         experience_context: {
           brand_name: "Dalil",
-          shipping_preference: "GET_FROM_FILE", // ship to the buyer's PayPal address
+          shipping_preference: input.noShipping ? "NO_SHIPPING" : "GET_FROM_FILE", // ship to the buyer's PayPal address
           user_action: "PAY_NOW",
           return_url: input.returnUrl,
           cancel_url: input.cancelUrl,

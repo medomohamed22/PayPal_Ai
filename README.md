@@ -19,6 +19,11 @@ Shopping agents (Grok, ChatGPT, Perplexity, Google, Amazon) race to "buy faster"
 | 📦 After the purchase | Tracking added to the PayPal order (Orders `/track`); one-tap refund for order problems |
 | ⚡ Channel3 catalog (US) | `catalog_search` tool: structured prices, images and ratings across 100M+ products in ~1s, plus **visual search** from the user's photo; also powers live price checks for US watches (`/v1/lookup`) |
 | 🌐 Real browser | `browser_open` / `browser_action`: a real headless **Chromium** (runs JavaScript) opens product pages, picks variants, uses a store's own search box and verifies live price & stock — the user watches a **live screenshot** of what the agent sees. It never logs in or pays on the site; buying only happens through PayPal approval |
+| 🤝 Agent-to-agent negotiation | Dalil's buyer agent haggles with the store's seller agent over HTTP (`/api/seller-agent`, `dalil-negotiation/1`), cites cheaper competitors, and returns a newly **signed** offer at the agreed price |
+| ⏳ Buy now or wait? | Deterministic verdict from price history (Channel3 + prices Dalil records) and the sales calendar (11.11, White/Black Friday, Ramadan…), with a one-tap watch at the suggested target |
+| 👥 Group buy | Split a purchase 2–6 ways via a share link: each share is a PayPal **hold**; all are captured only when everyone has paid, voided on cancel/expiry |
+| 🧾 Trust receipt + savings | After each purchase: why this offer, what was compared, which guarantees were enforced. "Purchases & savings" dashboard with an **AG Grid** table |
+| 🎙️ Voice & barcode | Ask by voice (Egyptian Arabic / English); scan a barcode in a store to compare online (BarcodeDetector / ZXing) |
 | 🧑‍⚖️ No key needed | Visitors without a Meta key use a server-held key, rate-limited per visitor and globally |
 
 ## PayPal APIs used
@@ -79,7 +84,9 @@ Open **Settings** → paste your Meta Model API key (stored only in your browser
 1. Open the app and just type — the real agent runs on a hosted key (limited per day). Or add your own Meta Model API key in **Settings**, or enable **Demo mode** for a scripted run.
    - For the Channel3 catalog and visual search, switch **Settings → Market** to **United States** and send a product name or photo.
 2. Ask: `buy airpods pro 3` → **Approve with PayPal** → log in with a PayPal **sandbox personal** account → you get the 10-minute hold → **Cancel** or **Confirm now** → **Track order** / **Problem with order?**
-3. Ask: `watch airpods pro 3 and tell me if it drops under 11500` → **Set up** → open 🔔 → **Simulate price drop** → **Buy now**.
+3. Ask: `negotiate airpods pro 3` → **Let Dalil negotiate** → watch the two agents agree → pay the new price → open **Purchases & savings**.
+4. On any approval card tap **Split it with friends** → open the link in another browser to pay a share.
+5. Ask: `watch airpods pro 3 and tell me if it drops under 11500` → **Set up** → open 🔔 → **Simulate price drop** → **Buy now**.
 
 ## Architecture
 - **Next.js 15 (App Router) on Vercel**, Tailwind v4, Framer Motion, Dexie (IndexedDB)

@@ -94,7 +94,7 @@ export default function PayLaterMessage({ amount, currency, lang }: { amount: nu
           <span>
             {inFour
               ? ar
-                ? <>قسّطها مع <b className="font-semibold text-fg">PayPal Pay Later</b>: 4 دفعات × <bdi dir="ltr">{part}</bdi> من غير فوايد — اختار «Pay Later» في شباك PayPal</>
+                ? <>قسّطها مع <bdi><b className="font-semibold text-fg">PayPal Pay Later</b></bdi> — 4 دفعات × <bdi dir="ltr">{part}</bdi> من غير فوايد — اختار «Pay Later» في شباك PayPal</>
                 : <>Pay later with <b className="font-semibold text-fg">PayPal</b>: 4 interest-free payments of {part} — choose “Pay Later” in the PayPal window</>
               : ar
                 ? <>قسّطها شهريًا مع <b className="font-semibold text-fg">PayPal Pay Monthly</b> — اختار «Pay Later» في شباك PayPal</>

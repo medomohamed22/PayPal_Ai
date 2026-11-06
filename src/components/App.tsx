@@ -41,6 +41,7 @@ import Logo from "./Logo";
 import MessageView, { type ApprovalAction } from "./MessageView";
 import SettingsSheet from "./SettingsSheet";
 import SavingsPanel from "./Savings";
+import { groupApi } from "./Group";
 import { Toasts, WatchesPanel, WatchSheet, type Toast } from "./Watches";
 import { enableNotifications, localNotify, registerServiceWorker, watchApi } from "@/lib/watch-client";
 
@@ -685,6 +686,18 @@ export default function App() {
   const onApproval = async (msgId: string, idx: number, action: ApprovalAction, reason?: string) => {
     if (action === "decline") return updateBlock(msgId, idx, { status: "declined" });
     if (action === "negotiate") return negotiateBlock(msgId, idx);
+    if (action === "group") {
+      const m0 = await db().messages.get(msgId);
+      const b0 = m0?.blocks[idx];
+      if (b0?.type !== "approval" || b0.groupId) return;
+      try {
+        const { group } = await groupApi.create(b0.offer, Number(reason) || 2);
+        await updateBlock(msgId, idx, { groupId: group.id });
+      } catch (err) {
+        pushToast({ title: ar ? "مقدرتش أعمل المجموعة" : "Couldn't create the group", body: String((err as Error).message ?? err) });
+      }
+      return;
+    }
     if (action === "retry") return updateBlock(msgId, idx, { status: "pending", message: undefined });
 
     // Approve: open the window synchronously (before any await) so popup blockers allow it.

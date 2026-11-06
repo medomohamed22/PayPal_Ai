@@ -34,6 +34,7 @@ import { formatMoney, type Strings } from "@/lib/i18n";
 import PayLaterMessage from "./PayLater";
 import { NegotiationPanel } from "./Negotiation";
 import { TrustReceipt } from "./Receipt";
+import { GroupMini, GroupStarter } from "./Group";
 import type { ApprovalStatus, Block, Lang, LinkPreview, Negotiation, Offer, PurchaseContext, Step } from "@/lib/types";
 
 /* ---------- Image with graceful fallback ---------- */
@@ -951,7 +952,11 @@ export function ApprovalCard({
   mandate,
   orderId,
   captureId,
+  groupId,
+  onGroup,
 }: {
+  groupId?: string;
+  onGroup?: (shares: number) => Promise<void>;
   context?: PurchaseContext;
   mandate?: { maxSpend: number; verifiedOnly: boolean };
   orderId?: string;
@@ -1075,7 +1080,7 @@ export function ApprovalCard({
         <AnimatePresence mode="wait">
           {status === "pending" ? (
             <motion.div key="actions" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2">
-              {onNegotiate && offer.trust !== "suspicious" && (!negotiation || negotiation.status === "failed") && (
+              {onNegotiate && !groupId && offer.trust !== "suspicious" && (!negotiation || negotiation.status === "failed") && (
                 <motion.button
                   whileTap={{ scale: 0.97 }}
                   onClick={onNegotiate}
@@ -1085,11 +1090,19 @@ export function ApprovalCard({
                   {lang === "ar" ? "خلّي دليل يفاوض على سعر أحسن" : "Let Dalil negotiate a better price"}
                 </motion.button>
               )}
-              <PayLaterMessage
-                amount={offer.chargeAmount ?? offer.total}
-                currency={offer.chargeCurrency ?? offer.currency}
-                lang={lang}
-              />
+              {groupId ? (
+                <GroupMini id={groupId} lang={lang} />
+              ) : onGroup && offer.trust !== "suspicious" && negotiation?.status !== "running" ? (
+                <GroupStarter lang={lang} onCreate={onGroup} />
+              ) : null}
+              {!groupId && (
+                <PayLaterMessage
+                  amount={offer.chargeAmount ?? offer.total}
+                  currency={offer.chargeCurrency ?? offer.currency}
+                  lang={lang}
+                />
+              )}
+              {!groupId && (
               <motion.button
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.97 }}
@@ -1105,6 +1118,7 @@ export function ApprovalCard({
                   transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut", repeatDelay: 0.8 }}
                 />
               </motion.button>
+              )}
               <button
                 onClick={onDecline}
                 className="w-full rounded-2xl border border-line py-2.5 text-sm font-medium text-fg-soft transition-colors hover:bg-bg-soft"

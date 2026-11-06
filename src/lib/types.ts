@@ -92,6 +92,8 @@ export type Block =
       /** Spending mandate in force when the user approved. */
       mandate?: { maxSpend: number; verifiedOnly: boolean };
       capturedAt?: number;
+      /** Group buy started from this approval. */
+      groupId?: string;
     }
   | { type: "watchDraft"; offer: Offer; targetPrice?: number; mode?: WatchMode }
   | { type: "error"; text: string }
@@ -286,4 +288,28 @@ export function purchaseContext(offer: Offer, lists: Offer[][]): PurchaseContext
     rank: idx >= 0 ? idx + 1 : undefined,
     flaggedSkipped: list.filter((o) => o.trust === "suspicious" || o.flags.includes("suspicious_discount")).length,
   };
+}
+
+/** Public view of a group buy (no device ids). */
+export interface GroupView {
+  id: string;
+  title: string;
+  store: string;
+  image?: string;
+  url?: string;
+  offerTotal: number;
+  offerCurrency: string;
+  /** Charged total and currency (USD for EGP offers). */
+  total: string;
+  currency: string;
+  shares: number;
+  /** Amount of the next share to pay. */
+  shareAmount: string;
+  paid: number;
+  status: "open" | "completed" | "cancelled" | "expired";
+  expiresAt: number;
+  isOrganizer: boolean;
+  organizerPaid: boolean;
+  members: Array<{ name: string; organizer: boolean; status: "pending" | "held" | "captured" | "voided" | "failed"; at: number }>;
+  message?: string;
 }
