@@ -112,10 +112,18 @@ export async function* negotiate(opts: {
     yield seller(last);
   }
 
+  // Never sign whatever a seller endpoint says: the deal must be a plausible
+  // discount on the signed offer (the demo seller's floor is 3–8% under list).
+  const sane = (v: unknown, lo: number, hi: number) => typeof v === "number" && Number.isFinite(v) && v >= lo && v <= hi;
+  if (!sane(last.price, offer.price * 0.8, offer.price) || !sane(last.shipping, 0, offer.shipping ?? 0)) {
+    yield dalil(ar ? "العرض ده مش منطقي — هنفضل على السعر الأصلي." : "That counter-offer doesn't add up — keeping the original price.");
+    yield { type: "done", offer: null, saved: 0, transport };
+    return;
+  }
   const total = Math.round((last.price + last.shipping) * 100) / 100;
   const next = prepareOffer({
     ...offer,
-    id: `${offer.id}_n${Date.now().toString(36)}`,
+    id: `${offer.id}-neg${Date.now().toString(36)}`,
     price: last.price,
     shipping: last.shipping,
     total,

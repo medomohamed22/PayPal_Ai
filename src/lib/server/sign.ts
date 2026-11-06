@@ -86,6 +86,13 @@ const DAY = 24 * 3600 * 1000;
 export const holdToken = (authorizationId: string, orderId: string) => signToken({ k: "hold", a: authorizationId, o: orderId }, 30 * DAY);
 export const captureToken = (captureId: string, orderId: string) => signToken({ k: "cap", c: captureId, o: orderId }, 180 * DAY);
 
+/** Proves this browser created the order — required to authorize it (and so to get its holdToken). */
+export const orderToken = (orderId: string) => signToken({ k: "order", o: orderId }, 6 * 3600 * 1000);
+export function checkOrderToken(token: unknown, orderId: string): void {
+  const d = verifyToken<{ k: string; o: string }>(typeof token === "string" ? token : undefined);
+  if (!d || d.k !== "order" || d.o !== orderId) throw new TokenError();
+}
+
 export function checkHoldToken(token: unknown, authorizationId: string): void {
   const d = verifyToken<{ k: string; a: string }>(typeof token === "string" ? token : undefined);
   if (!d || d.k !== "hold" || d.a !== authorizationId) throw new TokenError();

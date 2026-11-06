@@ -2,6 +2,7 @@ import { z } from "zod";
 import { refundCapture } from "@/lib/server/paypal";
 import { errorResponse } from "@/lib/server/http";
 import { checkCaptureToken } from "@/lib/server/sign";
+import { rateLimit } from "@/lib/server/ratelimit";
 
 export const runtime = "nodejs";
 
@@ -19,6 +20,8 @@ const NOTE: Record<z.infer<typeof Body>["reason"], string> = {
 
 /** Order problem → refund the captured payment through PayPal. */
 export async function POST(req: Request) {
+  const limited = await rateLimit(req, "refund", 15, 600);
+  if (limited) return limited;
   try {
     const b = Body.parse(await req.json());
     checkCaptureToken(b.captureToken, b.captureId);

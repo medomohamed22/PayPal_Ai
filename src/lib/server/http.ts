@@ -3,6 +3,7 @@ import { PayPalError } from "./paypal";
 import { TokenError } from "./sign";
 
 export function errorResponse(err: unknown): Response {
+  if (err instanceof SyntaxError) return Response.json({ error: "Invalid request", code: "BAD_JSON" }, { status: 400 });
   if (err instanceof TokenError) {
     return Response.json({ error: err.message, code: err.code }, { status: err.status });
   }

@@ -17,6 +17,7 @@ export interface PendingCheckout {
   msgId: string;
   idx: number;
   orderId: string;
+  orderToken?: string;
 }
 
 export interface HoldRecord {
@@ -63,13 +64,13 @@ export function openPayPalWindow(): Window | null {
 }
 
 export function createOrder(offer: Offer, mandate: Mandate, vault = false) {
-  return post<{ id: string; approveUrl: string; charge: { value: string; currency: string } }>(
+  return post<{ id: string; approveUrl: string; orderToken: string; charge: { value: string; currency: string } }>(
     "/api/paypal/create-order",
     { offer, mandate, vault },
   );
 }
 
-export function authorize(orderId: string) {
+export function authorize(orderId: string, orderToken?: string) {
   return post<{
     orderId: string;
     authorizationId: string;
@@ -80,7 +81,7 @@ export function authorize(orderId: string) {
     payerEmail?: string;
     vaultId?: string;
     holdToken: string;
-  }>("/api/paypal/authorize", { orderId });
+  }>("/api/paypal/authorize", { orderId, orderToken });
 }
 
 export function capture(authorizationId: string, holdToken?: string) {

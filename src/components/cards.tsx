@@ -593,6 +593,7 @@ const FLAG_TEXT: Record<string, { ar: string; en: string }> = {
   few_perfect_reviews: { ar: "تقييمات كاملة لكن قليلة جدًا", en: "Few, perfect reviews" },
   no_source_link: { ar: "مفيش لينك للمصدر", en: "No source link" },
   out_of_stock: { ar: "خلصان حاليًا", en: "Out of stock" },
+  price_unverified: { ar: "السعر ده متأكدناش منه من صفحة المتجر", en: "Price not confirmed on the store page" },
 };
 
 export function ProductCards({

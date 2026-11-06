@@ -2,7 +2,9 @@ import { z } from "zod";
 import { runAgent } from "@/lib/server/agent";
 import { runDemo } from "@/lib/server/demo";
 import { hostedConfig, hostedEnabled, takeHostedQuota } from "@/lib/server/hosted";
-import type { AgentEvent } from "@/lib/types";
+import { verifyOffer } from "@/lib/server/sign";
+import type { AgentEvent, Offer } from "@/lib/types";
+import { rateLimit } from "@/lib/server/ratelimit";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -28,9 +30,24 @@ const Body = z.object({
     demoMode: z.boolean(),
     coords: z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }).nullish(),
   }),
+  /** Offers Dalil already signed in this conversation — lets follow-ups ("buy the 2nd one") reuse their verified prices. */
+  offers: z.array(z.object({ sig: z.string() }).passthrough()).max(60).optional(),
 });
 
+function isOfficialMeta(u: string): boolean {
+  // Local mock model in tests (never on Vercel).
+  if (!process.env.VERCEL && process.env.DALIL_TEST_MODEL_BASE && u === process.env.DALIL_TEST_MODEL_BASE) return true;
+  try {
+    const x = new URL(u);
+    return x.protocol === "https:" && x.hostname === "api.meta.ai";
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(req: Request) {
+  const limited = await rateLimit(req, "chat", 40, 600);
+  if (limited) return limited;
   let body: z.infer<typeof Body>;
   try {
     body = Body.parse(await req.json());
@@ -40,6 +57,7 @@ export async function POST(req: Request) {
   const apiKey = req.headers.get("x-model-api-key") ?? "";
   const { settings, history } = body;
   const last = history[history.length - 1];
+  const knownOffers = ((body.offers ?? []) as unknown as Offer[]).filter((o) => verifyOffer(o) && !o.flags?.includes("price_unverified"));
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -82,6 +100,8 @@ export async function POST(req: Request) {
             lang: settings.lang,
             signal: req.signal,
             emit,
+            knownOffers,
+            trustedSearch: useHosted || isOfficialMeta(settings.baseUrl),
           });
         }
       } catch (err) {

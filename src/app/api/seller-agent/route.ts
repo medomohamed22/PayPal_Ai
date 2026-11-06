@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PROTOCOL, sellerTurn } from "@/lib/server/seller";
+import { rateLimit } from "@/lib/server/ratelimit";
 
 export const runtime = "nodejs";
 
@@ -22,6 +23,8 @@ const Body = z.object({
 
 /** Demo store-side agent for agent-to-agent negotiation (see lib/server/seller.ts). */
 export async function POST(req: Request) {
+  const limited = await rateLimit(req, "seller", 300, 600);
+  if (limited) return limited;
   try {
     const b = Body.parse(await req.json());
     return Response.json({ protocol: PROTOCOL, ...sellerTurn(b) });

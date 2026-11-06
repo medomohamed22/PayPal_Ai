@@ -12,6 +12,7 @@ export function deviceOf(req: Request): string | undefined {
 }
 
 export function groupFail(e: unknown): Response {
+  if (e instanceof SyntaxError) return Response.json({ error: "Invalid request", code: "BAD_JSON" }, { status: 400 });
   if (e instanceof GroupError || e instanceof PayPalError) {
     return Response.json({ error: e.message, code: e.code }, { status: e.status });
   }

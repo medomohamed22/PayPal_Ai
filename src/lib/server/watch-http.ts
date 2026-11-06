@@ -7,6 +7,7 @@ export function device(req: Request): string {
 }
 
 export function fail(err: unknown): Response {
+  if (err instanceof SyntaxError) return Response.json({ error: "Invalid request", code: "BAD_JSON" }, { status: 400 });
   if (err instanceof WatchError || err instanceof PayPalError) {
     return Response.json({ error: err.message, code: err.code }, { status: err.status });
   }

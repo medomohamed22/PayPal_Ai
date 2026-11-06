@@ -1,6 +1,7 @@
 import { addTracking } from "@/lib/server/paypal";
 import { errorResponse } from "@/lib/server/http";
 import { checkCaptureToken } from "@/lib/server/sign";
+import { rateLimit } from "@/lib/server/ratelimit";
 
 export const runtime = "nodejs";
 
@@ -9,6 +10,8 @@ export const runtime = "nodejs";
  * and registers tracking on the PayPal order (Orders v2 /track).
  */
 export async function POST(req: Request) {
+  const limited = await rateLimit(req, "track", 30, 600);
+  if (limited) return limited;
   try {
     const { captureId, captureToken, store } = (await req.json()) as { captureId?: string; captureToken?: string; store?: string };
     const id = String(captureId ?? "");

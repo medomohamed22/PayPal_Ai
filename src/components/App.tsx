@@ -154,12 +154,26 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   /** A purchase card to bring into view (e.g. right after tapping "Buy"). */
   const [focusMsg, setFocusMsg] = useState<string | null>(null);
+  const convRestored = useRef(false);
+  useEffect(() => {
+    if (!convRestored.current) return;
+    try {
+      if (convId) localStorage.setItem("dalil-conv", convId);
+      else localStorage.removeItem("dalil-conv");
+    } catch {}
+  }, [convId]);
   const s = t(settings.lang);
   const ar = settings.lang === "ar";
 
   useEffect(() => {
-    loadSettings().then((st) => {
+    loadSettings().then(async (st) => {
       setSettings(st);
+      // Reopen the conversation that was open before a reload (e.g. a purchase on hold).
+      try {
+        const last = localStorage.getItem("dalil-conv");
+        if (last && (await db().conversations.get(last))) setConvId((cur) => cur ?? last);
+      } catch {}
+      convRestored.current = true;
       setReady(true);
     });
     requestPersistence();
@@ -259,7 +273,13 @@ export default function App() {
       const userMsg: ChatMessage = { id: uid(), conversationId: cid, role: "user", blocks: userBlocks, createdAt: now };
       await db().messages.put(userMsg);
 
-      const history = toWire([...(await db().messages.where("conversationId").equals(cid).sortBy("createdAt"))]);
+      const convMsgs = await db().messages.where("conversationId").equals(cid).sortBy("createdAt");
+      const history = toWire(convMsgs);
+      // Signed offers already shown here — the server re-verifies them and lets the agent reuse their prices.
+      const knownOffers = convMsgs
+        .flatMap((m) => m.blocks.flatMap((b) => (b.type === "products" ? b.offers : b.type === "approval" || b.type === "watchDraft" ? [b.offer] : [])))
+        .filter((o) => o?.sig)
+        .slice(-60);
       let assistant: ChatMessage = {
         id: uid(),
         conversationId: cid,
@@ -294,6 +314,7 @@ export default function App() {
               demoMode: settings.demoMode,
               coords: settings.coords ?? null,
             },
+            offers: knownOffers,
           }),
           signal: ctrl.signal,
         });
@@ -626,7 +647,7 @@ export default function App() {
       }
       await updateBlock(msgId, idx, { status: "processing" });
       try {
-        const a = await authorize(result.orderId);
+        const a = await authorize(result.orderId, pending.orderToken);
         const captureAt = Date.now() + HOLD_MINUTES * 60_000;
         await updateBlock(msgId, idx, {
           status: "held",
@@ -781,7 +802,7 @@ export default function App() {
     try {
       const order = await createOrder(block.offer, { maxSpend: settings.maxSpend, verifiedOnly: settings.verifiedOnly });
       await updateBlock(msgId, idx, { mandate: { maxSpend: settings.maxSpend, verifiedOnly: settings.verifiedOnly } });
-      await setKV("pendingCheckout", { msgId, idx, orderId: order.id } satisfies PendingCheckout);
+      await setKV("pendingCheckout", { msgId, idx, orderId: order.id, orderToken: order.orderToken } satisfies PendingCheckout);
       await updateBlock(msgId, idx, { orderId: order.id });
       if (popup && !popup.closed) {
         popup.location.href = order.approveUrl;

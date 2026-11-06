@@ -20,6 +20,19 @@ import { HOLD_MINUTES, type Market, type Offer, type Watch, type WatchMode } fro
 interface WatchRecord extends Watch {
   device: string; // sha256(deviceId)
   demoPrice?: number;
+  /** The signed offer's price when the watch was created. */
+  listPrice?: number;
+}
+
+/**
+ * Simulated prices (demo random walk, the "simulate drop" button) are never
+ * real data, so they may not go further than 15% under the original signed
+ * price — otherwise a client could get a validly signed offer at any price.
+ */
+const MAX_SIMULATED_DROP = 0.15;
+function simFloor(r: WatchRecord): number {
+  const list = r.listPrice ?? r.history[0]?.price ?? r.lastPrice ?? r.targetPrice;
+  return Math.ceil(list * (1 - MAX_SIMULATED_DROP) * 100) / 100;
 }
 
 const MAX_WATCHES_PER_DEVICE = 20;
@@ -51,7 +64,7 @@ const K = {
 
 function toPublic(r: WatchRecord): Watch {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { device, demoPrice, ...pub } = r;
+  const { device, demoPrice, listPrice, ...pub } = r;
   return pub;
 }
 
@@ -123,6 +136,7 @@ export async function createWatch(
     createdAt: now,
     lastCheckedAt: now,
     demoPrice: input.demo ? offer.price : undefined,
+    listPrice: offer.price,
   };
   await kv.set(K.watch(rec.id), rec);
   await kv.sadd(K.device(device), rec.id);
@@ -157,7 +171,7 @@ async function currentPrice(r: WatchRecord): Promise<number | null> {
     // Gentle random walk around the last price for demo watches.
     const base = r.demoPrice ?? r.lastPrice ?? r.targetPrice * 1.1;
     const drift = 1 + (Math.random() - 0.55) * 0.01;
-    const p = Math.round(base * drift * 100) / 100;
+    const p = Math.max(simFloor(r), Math.round(base * drift * 100) / 100);
     r.demoPrice = p;
     return p;
   }
@@ -349,7 +363,12 @@ export async function watchAction(
     case "simulate": {
       // Demo helper for the video: make the price fall just under the target.
       if (r.status !== "active") throw new WatchError("Watch is not active", 409);
-      const p = params.price && params.price > 0 ? params.price : Math.floor(r.targetPrice * 0.97 * 100) / 100;
+      // The client may suggest a price, but never below the simulation floor.
+      const want = params.price && params.price > 0 ? Math.min(params.price, r.targetPrice) : Math.floor(r.targetPrice * 0.97 * 100) / 100;
+      const p = Math.max(simFloor(r), want);
+      if (p > r.targetPrice) {
+        throw new WatchError("A simulated drop can go at most 15% under the original price — raise the target to try it.", 409, "SIMULATION_LIMIT");
+      }
       r.demoPrice = p;
       await evaluate(r, p);
       break;

@@ -57,6 +57,17 @@ export interface RawOffer {
   inStock?: boolean;
 }
 
+/** Only plain web links reach the UI (no javascript:, data:, file: …). */
+function webUrl(u?: string): string | undefined {
+  if (!u || typeof u !== "string") return;
+  try {
+    const x = new URL(u);
+    return x.protocol === "https:" || x.protocol === "http:" ? x.href : undefined;
+  } catch {
+    return;
+  }
+}
+
 function domainOf(url?: string): string | undefined {
   if (!url) return;
   try {
@@ -110,7 +121,7 @@ export function rankOffers(raw: RawOffer[], market: string): Offer[] {
     if (r.rating && r.rating >= 4.9 && (r.reviewCount ?? 0) > 0 && (r.reviewCount ?? 0) < 15) {
       flags.push("few_perfect_reviews");
     }
-    if (!r.url) flags.push("no_source_link");
+    if (!webUrl(r.url)) flags.push("no_source_link");
     if (r.inStock === false) flags.push("out_of_stock");
 
     const priceScore = maxT === minT ? 1 : 1 - (total - minT) / (maxT - minT);
@@ -135,8 +146,8 @@ export function rankOffers(raw: RawOffer[], market: string): Offer[] {
     return {
       id: `o${i}_${Math.random().toString(36).slice(2, 7)}`,
       title: r.title,
-      image: r.image,
-      url: r.url,
+      image: webUrl(r.image),
+      url: webUrl(r.url),
       store: r.store,
       storeDomain: domain,
       price: r.price,
