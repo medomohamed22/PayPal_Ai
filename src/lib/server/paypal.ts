@@ -121,7 +121,18 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
   const total = (Number(item.value) + Number(ship.value)).toFixed(2);
   const currency = item.currency;
 
-  const safeUrl = (u?: string) => (u && /^https:\/\//.test(u) && u.length < 2000 ? u : undefined);
+  // PayPal validates these strictly: item url must be a plain https URL and
+  // image_url must end in .jpg/.jpeg/.png/.gif (no ;params or query strings).
+  const safeUrl = (u?: string) => {
+    if (!u || u.length > 2000) return undefined;
+    try {
+      const x = new URL(u);
+      return x.protocol === "https:" && !/[\s"'<>]/.test(u) ? x.toString() : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const safeImage = (u?: string) => (u && u.length < 2000 && /^https:\/\/[\w\-./%]+\.(jpe?g|png|gif)$/i.test(u) ? u : undefined);
 
   const body = {
     intent: "AUTHORIZE",
@@ -145,7 +156,7 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
             category: "PHYSICAL_GOODS",
             unit_amount: { currency_code: currency, value: item.value },
             ...(safeUrl(input.url) ? { url: safeUrl(input.url) } : {}),
-            ...(safeUrl(input.imageUrl) ? { image_url: safeUrl(input.imageUrl) } : {}),
+            ...(safeImage(input.imageUrl) ? { image_url: safeImage(input.imageUrl) } : {}),
           },
         ],
       },
@@ -170,11 +181,27 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
     },
   };
 
-  const order = await pp<{ id: string; links: Array<{ rel: string; href: string }> }>("/v2/checkout/orders", {
-    method: "POST",
-    body,
-    requestId: `dalil-${input.referenceId}`.slice(0, 108),
-  });
+  type Created = { id: string; links: Array<{ rel: string; href: string }> };
+  let order: Created;
+  try {
+    order = await pp<Created>("/v2/checkout/orders", {
+      method: "POST",
+      body,
+      requestId: `dalil-${input.referenceId}`.slice(0, 108),
+    });
+  } catch (e) {
+    // A merchant's odd product/image URL must never block checkout: retry without them.
+    if (!(e instanceof PayPalError) || (e.status !== 400 && e.status !== 422)) throw e;
+    const it = body.purchase_units[0].items[0] as Record<string, unknown>;
+    if (!("url" in it) && !("image_url" in it)) throw e;
+    delete it.url;
+    delete it.image_url;
+    order = await pp<Created>("/v2/checkout/orders", {
+      method: "POST",
+      body,
+      requestId: `dalil-${input.referenceId}-r`.slice(0, 108),
+    });
+  }
   const approve = order.links.find((l) => l.rel === "payer-action" || l.rel === "approve");
   if (!approve) throw new PayPalError("No approval link returned", 502);
   return { id: order.id, approveUrl: approve.href, charge: { value: total, currency } };

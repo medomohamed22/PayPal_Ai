@@ -185,26 +185,15 @@ function useClock(startedAt?: number, endedAt?: number, live?: boolean) {
   return Math.max(0, Math.round(((endedAt ?? now) - startedAt) / 1000));
 }
 
+/** Searching indicator: CSS-only so React re-renders (timer, steps) never restart or stutter it. */
 function RadarMark() {
   return (
-    <span className="relative flex size-9 shrink-0 items-center justify-center">
-      {[0, 1, 2].map((i) => (
-        <motion.span
-          key={i}
-          className="absolute inset-0 rounded-full border border-fg/30"
-          initial={{ scale: 0.5, opacity: 0.8 }}
-          animate={{ scale: 1.6, opacity: 0 }}
-          transition={{ duration: 2.4, repeat: Infinity, delay: i * 0.8, ease: "easeOut" }}
-        />
-      ))}
-      <motion.span
-        className="absolute inset-1 rounded-full"
-        style={{ background: "conic-gradient(from 0deg, transparent 0deg, color-mix(in srgb, var(--fg) 22%, transparent) 70deg, transparent 90deg)" }}
-        animate={{ rotate: 360 }}
-        transition={{ duration: 2.2, repeat: Infinity, ease: "linear" }}
-      />
+    <span className="radar relative flex size-9 shrink-0 items-center justify-center" aria-hidden>
+      <span className="radar-ring" />
+      <span className="radar-ring" style={{ animationDelay: "-1.2s" }} />
+      <span className="radar-sweep" />
       <span className="relative flex size-6 items-center justify-center rounded-full bg-inv-bg text-inv-fg">
-        <svg viewBox="0 0 24 24" width={14} height={14}>
+        <svg viewBox="0 0 24 24" width={14} height={14} className="radar-needle">
           <path d="M12 3.5 L15 12 L12 10.6 L9 12 Z" fill="currentColor" />
           <path d="M12 20.5 L9 12 L12 13.4 L15 12 Z" fill="currentColor" opacity="0.45" />
         </svg>
@@ -276,7 +265,6 @@ export function StepsTimeline({
     const tips = TIPS[lang];
     return (
       <motion.div
-        layout
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-xl overflow-hidden rounded-3xl border border-line bg-bg-soft"

@@ -4,15 +4,39 @@ import type { Offer, TrustLevel } from "../types";
 const VERIFIED: Record<string, string[]> = {
   EG: [
     "amazon.eg", "noon.com", "jumia.com.eg", "btech.com", "2b.com.eg",
-    "carrefouregypt.com", "raneen.com", "select.com.eg", "apple.com", "samsung.com",
+    "carrefouregypt.com", "raneen.com", "select.com.eg", "elarabygroup.com", "tradelinestores.com",
+    "cairosales.com", "dream2000.com", "hubstore.com.eg", "istyle.com.eg", "virginmegastore.com.eg",
+    "spinneys-egypt.com", "kimostore.net", "sharafdg.com", "xcite.com", "elgendy.store",
     "dalil-demo.store",
   ],
   US: [
-    "amazon.com", "walmart.com", "bestbuy.com", "target.com", "apple.com",
-    "costco.com", "bhphotovideo.com", "newegg.com", "samsung.com", "homedepot.com",
+    "amazon.com", "walmart.com", "bestbuy.com", "target.com", "costco.com", "bhphotovideo.com",
+    "newegg.com", "homedepot.com", "lowes.com", "adorama.com", "crutchfield.com", "macys.com",
+    "kohls.com", "nordstrom.com", "samsclub.com", "staples.com", "officedepot.com", "gamestop.com",
+    "dickssportinggoods.com", "rei.com", "wayfair.com", "ikea.com", "sephora.com", "ulta.com",
+    "cvs.com", "walgreens.com", "microcenter.com", "verizon.com", "att.com", "t-mobile.com",
     "dalil-demo.store",
   ],
 };
+
+/** Official brand stores — trusted in every market. */
+const BRANDS = [
+  "apple", "samsung", "sony", "lg", "bose", "dell", "hp", "lenovo", "asus", "acer", "microsoft",
+  "google", "xiaomi", "mi", "oppo", "realme", "huawei", "honor", "oneplus", "nokia", "motorola",
+  "philips", "braun", "dyson", "jbl", "harman", "beats", "anker", "logitech", "razer", "canon",
+  "nikon", "fujifilm", "gopro", "garmin", "fitbit", "nintendo", "playstation", "xbox", "nike",
+  "adidas", "puma", "tefal", "moulinex", "kenwood", "delonghi", "ninja", "ninjakitchen", "instantbrands",
+  "sharp", "toshiba", "panasonic", "tornado", "fresh", "zanussi", "bosch", "whirlpool", "ikea",
+];
+
+/** Domain of an official brand store whose brand appears in the product title (e.g. sony.com for "Sony WH-1000XM5"). */
+function isOfficialBrand(domain: string, title: string): boolean {
+  const labels = domain.split(".");
+  const t = title.toLowerCase();
+  return labels.some(
+    (l) => l.length >= 2 && BRANDS.includes(l) && new RegExp(`(^|[^a-z])${l}([^a-z]|$)`).test(t),
+  );
+}
 
 export interface RawOffer {
   title: string;
@@ -68,7 +92,7 @@ export function rankOffers(raw: RawOffer[], market: string): Offer[] {
     const flags: string[] = [];
 
     let trust: TrustLevel =
-      domain && verified.some((v) => domain === v || domain.endsWith("." + v))
+      domain && (verified.some((v) => domain === v || domain.endsWith("." + v)) || isOfficialBrand(domain, r.title))
         ? "verified"
         : "unknown";
 

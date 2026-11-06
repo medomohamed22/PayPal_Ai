@@ -153,6 +153,41 @@ html[dir="rtl"] .shimmer {
   text-align: start;
 }
 
+/* ---- Search radar (compositor-only: transform + opacity) ---- */
+.radar-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in srgb, var(--fg) 28%, transparent);
+  animation: radar-ring 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+  will-change: transform, opacity;
+}
+.radar-sweep {
+  position: absolute;
+  inset: 4px;
+  border-radius: 9999px;
+  background: conic-gradient(from 0deg, transparent 0deg, color-mix(in srgb, var(--fg) 20%, transparent) 60deg, transparent 100deg);
+  animation: radar-spin 2.4s linear infinite;
+  will-change: transform;
+  backface-visibility: hidden;
+}
+.radar-needle {
+  transform-origin: 50% 50%;
+  animation: radar-needle 3.2s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes radar-ring {
+  from { transform: scale(0.55); opacity: 0.75; }
+  to { transform: scale(1.6); opacity: 0; }
+}
+@keyframes radar-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes radar-needle {
+  0%, 100% { transform: rotate(-18deg); }
+  50% { transform: rotate(18deg); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
