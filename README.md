@@ -18,6 +18,7 @@ Shopping agents (Grok, ChatGPT, Perplexity, Google, Amazon) race to "buy faster"
 | 🔔 Price watches | Notify-then-approve, or **auto-buy** with a vaulted PayPal wallet (Vault v3) and the same 10-minute hold |
 | 📦 After the purchase | Tracking added to the PayPal order (Orders `/track`); one-tap refund for order problems |
 | ⚡ Channel3 catalog (US) | `catalog_search` tool: structured prices, images and ratings across 100M+ products in ~1s, plus **visual search** from the user's photo; also powers live price checks for US watches (`/v1/lookup`) |
+| 🌐 Real browser | `browser_open` / `browser_action`: a real headless **Chromium** (runs JavaScript) opens product pages, picks variants, uses a store's own search box and verifies live price & stock — the user watches a **live screenshot** of what the agent sees. It never logs in or pays on the site; buying only happens through PayPal approval |
 | 🧑‍⚖️ No key needed | Visitors without a Meta key use a server-held key, rate-limited per visitor and globally |
 
 ## PayPal APIs used
@@ -68,6 +69,8 @@ Open **Settings** → paste your Meta Model API key (stored only in your browser
 | `META_API_KEY` | recommended | server-held Meta key so visitors can try the real agent without their own |
 | `HOSTED_DAILY_LIMIT` / `HOSTED_GLOBAL_DAILY_LIMIT` | | requests per visitor / in total per day (defaults `20` / `500`) |
 | `HOSTED_MODEL` | | model for hosted requests (default `muse-spark-1.3-contributor`) |
+| `BROWSER_WS_ENDPOINT` | | optional remote browser (Browserless/Browserbase) instead of the bundled Chromium |
+| `DALIL_BROWSER` | | `off` disables the real-browser tools |
 
 3. Redeploy and check `GET /api/paypal/status` → `{"configured": true, "env": "sandbox"}`.
 4. Vercel Hobby runs the cron once a day, so `.github/workflows/price-watch.yml` (GitHub Actions) calls `/api/cron` **every 10 minutes**. Add a repository secret `CRON_SECRET` (same value as in Vercel); optionally a repository variable `APP_URL`. While the app is open it also checks watches every 30 s.
@@ -82,6 +85,7 @@ Open **Settings** → paste your Meta Model API key (stored only in your browser
 - **Next.js 15 (App Router) on Vercel**, Tailwind v4, Framer Motion, Dexie (IndexedDB)
 - `src/app/api/chat` — streams NDJSON agent events (activity, text, cards)
 - `src/lib/server/agent.ts` — tool-calling loop over the Meta Model API (OpenAI-compatible); tools run in parallel
+- `src/lib/server/browser.ts` — real Chromium session (`@sparticuz/chromium` + `puppeteer-core` on Vercel); SSRF-guarded navigation and sub-requests, numbered elements for clicking/typing, live screenshots
 - `src/lib/server/channel3.ts` — Channel3 product catalog (search, visual search, price lookup)
 - `src/lib/server/hosted.ts` — server-held model key with per-visitor/global daily limits
 - `.github/workflows/price-watch.yml` — 10-minute price checks via GitHub Actions

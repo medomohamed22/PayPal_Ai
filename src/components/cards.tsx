@@ -24,10 +24,12 @@ import {
   Lock,
   BellPlus,
   PackageSearch,
+  MousePointerClick,
+  AppWindow,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatMoney, type Strings } from "@/lib/i18n";
-import type { ApprovalStatus, Lang, LinkPreview, Offer, Step } from "@/lib/types";
+import type { ApprovalStatus, Block, Lang, LinkPreview, Offer, Step } from "@/lib/types";
 
 /* ---------- Image with graceful fallback ---------- */
 
@@ -116,6 +118,8 @@ const STEP_ICON: Record<string, typeof Search> = {
   web_search: Search,
   catalog_search: PackageSearch,
   browse_url: Globe,
+  browser_open: AppWindow,
+  browser_action: MousePointerClick,
   show_offers: Scale,
   request_purchase_approval: ShieldCheck,
   deal_check: ScanSearch,
@@ -127,6 +131,8 @@ export function stepLabel(tool: string, s: Strings, lang: Lang): string {
     web_search: "بيبحث في الويب",
     catalog_search: "بيدوّر في كتالوج ١٠٠ مليون منتج",
     browse_url: "بيتصفح",
+    browser_open: "بيفتح الصفحة في متصفح حقيقي",
+    browser_action: "بيتعامل مع الصفحة",
     show_offers: "بيقارن ويرتّب العروض",
     request_purchase_approval: "بيجهّز طلب الموافقة",
     deal_check: "بيكشف العروض الوهمية",
@@ -136,6 +142,8 @@ export function stepLabel(tool: string, s: Strings, lang: Lang): string {
     web_search: "Searching the web",
     catalog_search: "Searching a 100M-product catalog",
     browse_url: "Browsing",
+    browser_open: "Opening in a real browser",
+    browser_action: "Interacting with the page",
     show_offers: "Comparing & ranking offers",
     request_purchase_approval: "Preparing approval",
     deal_check: "Checking for fake deals",
@@ -236,7 +244,7 @@ export function StepsTimeline({
   }, [running]);
 
   const current = [...steps].reverse().find((x) => x.status === "running") ?? steps[steps.length - 1];
-  const browsed = steps.filter((x) => x.tool === "browse_url" && x.detail);
+  const browsed = steps.filter((x) => (x.tool === "browse_url" || x.tool === "browser_open") && x.detail);
   const found = Array.from(new Set(steps.flatMap((x) => x.hosts ?? [])));
   const allHosts = Array.from(new Set([...browsed.map((x) => x.detail!), ...found]));
   const searches = steps.filter((x) => x.tool === "web_search" || x.tool === "catalog_search").length;
@@ -246,7 +254,7 @@ export function StepsTimeline({
 
   const stage = steps.some((x) => x.tool === "show_offers")
     ? 3
-    : steps.some((x) => x.tool === "browse_url")
+    : steps.some((x) => x.tool === "browse_url" || x.tool === "browser_open" || x.tool === "browser_action")
       ? 2
       : steps.length
         ? 1
@@ -283,7 +291,7 @@ export function StepsTimeline({
                 dir="auto"
               >
                 {current
-                  ? `${stepLabel(current.tool, s, lang)}${current.detail && current.tool === "browse_url" ? ` ${current.detail}` : ""}`
+                  ? `${stepLabel(current.tool, s, lang)}${current.detail && (current.tool === "browse_url" || current.tool === "browser_open") ? ` ${current.detail}` : ""}`
                   : ar
                     ? "بيفهم طلبك…"
                     : "Understanding your request…"}
@@ -465,6 +473,86 @@ export function OfferSkeletons() {
         ))}
       </div>
     </div>
+  );
+}
+
+/* ---------- Live browser view ---------- */
+
+const ACTION_LABEL: Record<string, { ar: string; en: string }> = {
+  open: { ar: "فتح الصفحة", en: "Opened page" },
+  click: { ar: "ضغط", en: "Clicked" },
+  type: { ar: "كتب وبحث", en: "Typed & searched" },
+  scroll: { ar: "نزل لتحت", en: "Scrolled" },
+  back: { ar: "رجع", en: "Went back" },
+};
+
+export function BrowserCard({ block, lang, live }: { block: Extract<Block, { type: "browser" }>; lang: Lang; live: boolean }) {
+  const ar = lang === "ar";
+  let host = block.url;
+  try {
+    host = new URL(block.url).hostname.replace(/^www\./, "");
+  } catch {
+    /* keep raw */
+  }
+  const act = ACTION_LABEL[block.action ?? "open"];
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="w-full max-w-xl overflow-hidden rounded-2xl border border-line bg-bg shadow-card"
+    >
+      <div className="flex items-center gap-2 border-b border-line bg-bg-soft px-3 py-2" dir="ltr">
+        <span className="flex gap-1">
+          <span className="size-2 rounded-full bg-line-strong" />
+          <span className="size-2 rounded-full bg-line-strong" />
+          <span className="size-2 rounded-full bg-line-strong" />
+        </span>
+        <a
+          href={block.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-full bg-bg px-2.5 py-1 text-[11px] text-fg-soft hover:text-fg"
+        >
+          <Lock className="size-3 shrink-0" />
+          <span className="truncate">{host}</span>
+        </a>
+        {live ? (
+          <span className="flex items-center gap-1 rounded-full bg-inv-bg px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-inv-fg">
+            <span className="live-dot size-1.5 rounded-full bg-inv-fg" /> Live
+          </span>
+        ) : null}
+      </div>
+      <div className="relative aspect-[1280/860] w-full overflow-hidden bg-bg-muted">
+        <AnimatePresence initial={false}>
+          {block.shot ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <motion.img
+              key={block.shot.length + (block.action ?? "") + block.url}
+              src={block.shot}
+              alt={block.title ?? host}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.35 }}
+              className="absolute inset-0 size-full object-cover object-top"
+            />
+          ) : null}
+        </AnimatePresence>
+        {live ? <span className="browser-scan pointer-events-none absolute inset-x-0 top-0 h-16" /> : null}
+      </div>
+      <div className="flex items-center gap-2 px-3 py-2 text-[12px] text-fg-muted" dir="auto">
+        <AppWindow className="size-3.5 shrink-0" />
+        <span className="truncate">
+          {act ? (ar ? act.ar : act.en) : block.action}
+          {block.title ? ` · ${block.title}` : ""}
+        </span>
+        {block.pages ? (
+          <span className="ms-auto shrink-0 tabular-nums">
+            {ar ? `${block.pages} ${block.pages === 1 ? "صفحة" : "صفحات"}` : `${block.pages} page${block.pages > 1 ? "s" : ""}`}
+          </span>
+        ) : null}
+      </div>
+    </motion.div>
   );
 }
 

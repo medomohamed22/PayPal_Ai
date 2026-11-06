@@ -87,7 +87,9 @@ export type Block =
       refund?: { id: string; status: string; reason: string; amount?: string; currency?: string };
     }
   | { type: "watchDraft"; offer: Offer; targetPrice?: number; mode?: WatchMode }
-  | { type: "error"; text: string };
+  | { type: "error"; text: string }
+  /** Live view of the agent's real browser (latest screenshot). */
+  | { type: "browser"; url: string; title?: string; shot?: string; action?: string; pages?: number; live?: boolean };
 
 export interface ChatMessage {
   id: string;
@@ -157,6 +159,8 @@ export type AgentEvent =
   | { type: "text"; delta: string }
   /** Interim narration from a turn that continued with tools — shown in the activity bar. */
   | { type: "thought"; text: string }
+  /** The agent's browser session ended — the live view becomes a static snapshot. */
+  | { type: "browserDone" }
   | { type: "block"; block: Block }
   | { type: "error"; message: string }
   | { type: "done" };

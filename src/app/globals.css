@@ -171,6 +171,25 @@ html[dir="rtl"] .shimmer {
   will-change: transform;
   backface-visibility: hidden;
 }
+.browser-scan {
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--fg) 10%, transparent), transparent);
+  animation: browser-scan 2.2s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes browser-scan {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(560%); }
+}
+.live-dot {
+  animation: live-dot 1.2s ease-in-out infinite;
+}
+@keyframes live-dot {
+  50% { opacity: 0.25; }
+}
+.logo-rest {
+  transform: rotate(0deg);
+  transition: transform 0.4s ease-out;
+}
 .radar-needle {
   transform-origin: 50% 50%;
   animation: radar-needle 3.2s ease-in-out infinite;

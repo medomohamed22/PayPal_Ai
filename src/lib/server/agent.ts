@@ -1,5 +1,6 @@
 import "server-only";
 import { browse } from "./browse";
+import { BrowserSession, browserAvailable, type PageState } from "./browser";
 import { catalogSearch, channel3Enabled } from "./channel3";
 import { streamChat, webSearch, type ChatMsg, type FunctionTool, type MetaConfig } from "./meta";
 import { rankOffers, type RawOffer } from "./rank";
@@ -43,6 +44,35 @@ const CATALOG_TOOL: FunctionTool = {
     },
   },
 };
+
+const BROWSER_TOOLS: FunctionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "browser_open",
+      description:
+        "Open a URL in a REAL Chromium browser (runs JavaScript, like a person). Use it when browse_url found no price, the page is JavaScript-heavy, or to verify the live price, stock, variants and shipping before recommending or buying. Returns product facts, page text and numbered clickable elements; the user sees a live screenshot. Slower than browse_url — open one page at a time.",
+      parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "browser_action",
+      description:
+        "Act on the page opened with browser_open: click an element by id (e.g. a size/color option, 'see all offers', a search result), type into a field by id (e.g. the site's search box; Enter is pressed), scroll, or go back. Never log in, never enter personal or payment data, never place orders on the site — purchases happen only via request_purchase_approval (PayPal).",
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["click", "type", "scroll", "back"] },
+          id: { type: "number", description: "Element id from the latest elements list (click/type)" },
+          text: { type: "string", description: "Text to type (type only)" },
+        },
+        required: ["action"],
+      },
+    },
+  },
+];
 
 export const TOOLS: FunctionTool[] = [
   {
@@ -130,7 +160,8 @@ Reply in ${lang === "ar" ? "Egyptian Arabic" : "English"} unless the user writes
 How to work:
 1. Identify the exact product. If the user sent a photo, identify brand/model/variant from it. If they sent a link, browse it first.
 2. Be fast but thorough. Start with ONE web_search call carrying 2-3 different queries (official store, big marketplaces, local shops in ${city}). Search results often already contain prices — use them. Browse only pages whose price/image is missing, several in ONE turn (they run in parallel). If a page is blocked or errors, do NOT retry it — rely on search-result prices. You may search again with new angles if results are thin. Prefer official and well-known retailers in ${country}. Compare the TOTAL cost (price + shipping). Include nearby physical stores with distance when known. Each tool result ends with the time left; when it is under 15s, finish.
-${catalog ? "   US catalog: in your FIRST turn call catalog_search (instant prices, images, ratings across major US retailers; use_photo=true when the user sent a photo) together with web_search for anything the catalog may miss. Catalog offers are verified data — prefer them over browsing.\n" : ""}3. Call show_offers as soon as you have 2+ real offers — the user sees them immediately — and call it again later with a better/larger list if you keep searching (it replaces the cards). 2-8 real offers. Never invent URLs, prices, ratings or stores — only use facts from tool results. If a fact is unknown, omit it.
+${catalog ? "   US catalog: in your FIRST turn call catalog_search (instant prices, images, ratings across major US retailers; use_photo=true when the user sent a photo) together with web_search for anything the catalog may miss. Catalog offers are verified data — prefer them over browsing.\n" : ""}   Real browser: browse_url is a fast plain fetch. When it returns no price, gets blocked, or the page needs JavaScript, use browser_open (a real Chromium) on the 1-2 most promising product pages; use browser_action to pick variants, open "all offers", or use a site's own search box. Before calling request_purchase_approval for a price that came only from search results, verify it with browser_open when time allows.
+3. Call show_offers as soon as you have 2+ real offers — the user sees them immediately — and call it again later with a better/larger list if you keep searching (it replaces the cards). 2-8 real offers. Never invent URLs, prices, ratings or stores — only use facts from tool results. If a fact is unknown, omit it.
 4. After show_offers, write 1-3 short sentences: the recommendation and why (using the returned ranking and any flags such as suspicious_discount or price_far_below_market).
 5. Only call request_purchase_approval when the user clearly wants to buy a specific offer. You can never pay any other way.
 6. If the user wants to wait for a better price ("watch", "tell me when it drops", "buy if under X"), find the product first, then call propose_watch with the best offer, the target price and mode ("auto" only if they asked to buy automatically).
@@ -177,8 +208,8 @@ export interface RunOptions {
   emit: (e: AgentEvent) => void;
 }
 
-const MAX_ROUNDS = 8;
-const TIME_BUDGET_MS = Number(process.env.DALIL_TIME_BUDGET_MS) || 60_000;
+const MAX_ROUNDS = 10;
+const TIME_BUDGET_MS = Number(process.env.DALIL_TIME_BUDGET_MS) || 75_000;
 
 export async function runAgent(opts: RunOptions): Promise<void> {
   const { cfg, market, city, lang, emit, signal } = opts;
@@ -186,106 +217,121 @@ export async function runAgent(opts: RunOptions): Promise<void> {
   const pages = new Map<string, { image?: string; rating?: number; reviewCount?: number }>();
   const state = { offersShown: false };
   const catalog = market === "US" && channel3Enabled();
-  const tools = catalog ? [CATALOG_TOOL, ...TOOLS] : TOOLS;
-  const photo = [...opts.history].reverse().find((m) => m.role === "user")?.images?.[0];
-  const messages: ChatMsg[] = [
-    { role: "developer", content: developerPrompt(market, city, lang, opts.coords, catalog) },
-    ...toChatMessages(opts.history),
-  ];
+  const tools = [...(catalog ? [CATALOG_TOOL] : []), ...TOOLS, ...(browserAvailable() ? BROWSER_TOOLS : [])];
+  const browser = new BrowserSession();
+  // One tab: browser calls of the same turn run one after another.
+  let browserQueue: Promise<unknown> = Promise.resolve();
+  const viaBrowser = <T,>(fn: () => Promise<T>): Promise<T> => {
+    const run = browserQueue.then(fn, fn);
+    browserQueue = run.catch(() => {});
+    return run;
+  };
+  try {
+    const photo = [...opts.history].reverse().find((m) => m.role === "user")?.images?.[0];
+    const messages: ChatMsg[] = [
+      { role: "developer", content: developerPrompt(market, city, lang, opts.coords, catalog) },
+      ...toChatMessages(opts.history),
+    ];
 
-  for (let round = 0; round < MAX_ROUNDS; round++) {
-    if (signal?.aborted) return;
-    const outOfTime = Date.now() - started > TIME_BUDGET_MS;
-    const lastRound = round === MAX_ROUNDS - 1 || outOfTime;
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      if (signal?.aborted) return;
+      const outOfTime = Date.now() - started > TIME_BUDGET_MS;
+      const lastRound = round === MAX_ROUNDS - 1 || outOfTime;
 
-    // Never leave the user without results: at the end, force a decision.
-    let choice: Parameters<typeof streamChat>[4] = "auto";
-    if (lastRound && !state.offersShown && round > 0) {
-      messages.push({
-        role: "developer",
-        content:
-          "Time is up. Call show_offers NOW with the best real offers you already have (prices from search results are fine, even if pages were blocked). Do not search or browse again.",
-      });
-      choice = { type: "function", function: { name: "show_offers" } };
-    } else if (lastRound && state.offersShown) {
-      messages.push({ role: "developer", content: "Time is up. Give your final 1-3 sentence recommendation now. No more tools." });
-      choice = "none";
-    }
-
-    const gen = streamChat(cfg, messages, tools, signal, choice);
-    let result: { toolCalls: { id: string; name: string; arguments: string }[]; text: string };
-    while (true) {
-      const n = await gen.next();
-      if (n.done) {
-        result = n.value;
-        break;
+      // Never leave the user without results: at the end, force a decision.
+      let choice: Parameters<typeof streamChat>[4] = "auto";
+      if (lastRound && !state.offersShown && round > 0) {
+        messages.push({
+          role: "developer",
+          content:
+            "Time is up. Call show_offers NOW with the best real offers you already have (prices from search results are fine, even if pages were blocked). Do not search or browse again.",
+        });
+        choice = { type: "function", function: { name: "show_offers" } };
+      } else if (lastRound && state.offersShown) {
+        messages.push({ role: "developer", content: "Time is up. Give your final 1-3 sentence recommendation now. No more tools." });
+        choice = "none";
       }
-      emit({ type: "text", delta: n.value.text });
-    }
 
-    if (!result.toolCalls.length) return;
-
-    // Text written before tool calls is narration — move it into the activity bar.
-    if (result.text.trim()) emit({ type: "thought", text: result.text });
-
-    messages.push({
-      role: "assistant",
-      content: result.text || null,
-      tool_calls: result.toolCalls.map((c) => ({
-        id: c.id,
-        type: "function",
-        function: { name: c.name, arguments: c.arguments || "{}" },
-      })),
-    });
-
-    // Run every tool call of this turn in parallel (e.g. 5 browse_url at once).
-    const outputs = await Promise.all(
-      result.toolCalls.map(async (call) => {
-        let args: Record<string, unknown> = {};
-        try {
-          args = JSON.parse(call.arguments || "{}");
-        } catch {
-          /* leave empty */
+      const gen = streamChat(cfg, messages, tools, signal, choice);
+      let result: { toolCalls: { id: string; name: string; arguments: string }[]; text: string };
+      while (true) {
+        const n = await gen.next();
+        if (n.done) {
+          result = n.value;
+          break;
         }
-        const step: Step = { id: call.id, tool: call.name, label: call.name, status: "running" };
-        if (call.name === "web_search") {
-          const qs = Array.isArray(args.queries) ? args.queries : [args.query];
-          step.detail = clip(qs.filter(Boolean).map(String).join(" · "), 90);
-        }
-        if (call.name === "browse_url") step.detail = hostOf(String(args.url ?? ""));
-        if (call.name === "catalog_search") step.detail = clip(String(args.query ?? (args.use_photo ? "📷" : "")), 90);
-        emit({ type: "step", step });
-        try {
-          const output = await execTool(call.name, args, { cfg, market, emit, signal, pages, state, photo });
-          const hosts =
-            call.name === "catalog_search" && Array.isArray(output)
-              ? Array.from(new Set((output as Array<{ store: string }>).map((o) => o.store))).slice(0, 8)
-              : call.name === "web_search" && Array.isArray(output)
-              ? Array.from(
-                  new Set(
-                    (output as Array<{ sources?: Array<{ url: string }> }>)
-                      .flatMap((r) => r.sources ?? [])
-                      .map((x) => hostOf(x.url)),
-                  ),
-                ).slice(0, 8)
-              : undefined;
-          emit({ type: "step", step: { ...step, status: "done", hosts } });
-          return output;
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          emit({ type: "step", step: { ...step, status: "error" } });
-          return { error: msg, hint: call.name === "browse_url" ? "Page blocked or slow — use prices from search results instead." : undefined };
-        }
-      }),
-    );
-    const left = Math.max(0, Math.round((TIME_BUDGET_MS - (Date.now() - started)) / 1000));
-    result.toolCalls.forEach((call, i) =>
+        emit({ type: "text", delta: n.value.text });
+      }
+
+      if (!result.toolCalls.length) return;
+
+      // Text written before tool calls is narration — move it into the activity bar.
+      if (result.text.trim()) emit({ type: "thought", text: result.text });
+
       messages.push({
-        role: "tool",
-        tool_call_id: call.id,
-        content: clip(JSON.stringify(outputs[i]), 9000) + (i === result.toolCalls.length - 1 ? `\n[time left: ${left}s]` : ""),
-      }),
-    );
+        role: "assistant",
+        content: result.text || null,
+        tool_calls: result.toolCalls.map((c) => ({
+          id: c.id,
+          type: "function",
+          function: { name: c.name, arguments: c.arguments || "{}" },
+        })),
+      });
+
+      // Run every tool call of this turn in parallel (e.g. 5 browse_url at once).
+      const outputs = await Promise.all(
+        result.toolCalls.map(async (call) => {
+          let args: Record<string, unknown> = {};
+          try {
+            args = JSON.parse(call.arguments || "{}");
+          } catch {
+            /* leave empty */
+          }
+          const step: Step = { id: call.id, tool: call.name, label: call.name, status: "running" };
+          if (call.name === "web_search") {
+            const qs = Array.isArray(args.queries) ? args.queries : [args.query];
+            step.detail = clip(qs.filter(Boolean).map(String).join(" · "), 90);
+          }
+          if (call.name === "browse_url" || call.name === "browser_open") step.detail = hostOf(String(args.url ?? ""));
+          if (call.name === "browser_action") step.detail = clip(`${args.action}${args.id != null ? ` #${args.id}` : ""}${args.text ? ` "${args.text}"` : ""}`, 60);
+          if (call.name === "catalog_search") step.detail = clip(String(args.query ?? (args.use_photo ? "📷" : "")), 90);
+          emit({ type: "step", step });
+          try {
+            const output = await execTool(call.name, args, { cfg, market, emit, signal, pages, state, photo, browser, viaBrowser });
+            const hosts =
+              call.name === "catalog_search" && Array.isArray(output)
+                ? Array.from(new Set((output as Array<{ store: string }>).map((o) => o.store))).slice(0, 8)
+                : call.name === "web_search" && Array.isArray(output)
+                ? Array.from(
+                    new Set(
+                      (output as Array<{ sources?: Array<{ url: string }> }>)
+                        .flatMap((r) => r.sources ?? [])
+                        .map((x) => hostOf(x.url)),
+                    ),
+                  ).slice(0, 8)
+                : undefined;
+            emit({ type: "step", step: { ...step, status: "done", hosts } });
+            return output;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            emit({ type: "step", step: { ...step, status: "error" } });
+            return { error: msg, hint: call.name === "browse_url" ? "Page blocked or slow — use prices from search results instead." : undefined };
+          }
+        }),
+      );
+      if (signal?.aborted) return;
+      const left = Math.max(0, Math.round((TIME_BUDGET_MS - (Date.now() - started)) / 1000));
+      result.toolCalls.forEach((call, i) =>
+        messages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: clip(JSON.stringify(outputs[i]), 9000) + (i === result.toolCalls.length - 1 ? `\n[time left: ${left}s]` : ""),
+        }),
+      );
+    }
+  } finally {
+    await browser.close();
+    if (browser.pagesVisited) emit({ type: "browserDone" });
   }
 }
 
@@ -300,9 +346,41 @@ async function execTool(
     pages: Map<string, { image?: string; rating?: number; reviewCount?: number }>;
     state: { offersShown: boolean };
     photo?: string;
+    browser?: BrowserSession;
+    viaBrowser?: <T>(fn: () => Promise<T>) => Promise<T>;
   },
 ): Promise<unknown> {
+  const showPage = (st: PageState, action: string) => {
+    ctx.emit({
+      type: "block",
+      block: { type: "browser", url: st.url, title: st.title?.slice(0, 120), shot: st.shot, action, pages: ctx.browser?.pagesVisited, live: true },
+    });
+    const f = { image: st.product.image, rating: st.product.rating, reviewCount: st.product.reviewCount };
+    ctx.pages.set(st.url, f);
+    return {
+      url: st.url,
+      http_status: st.status,
+      title: st.title,
+      product: st.product,
+      elements: st.elements.slice(0, 45),
+      untrusted_page_text: st.text.slice(0, st.product.price ? 1200 : 2600),
+    };
+  };
   switch (name) {
+    case "browser_open": {
+      if (!ctx.browser || !ctx.viaBrowser) throw new Error("browser unavailable");
+      const url = String(args.url ?? "");
+      const st = await ctx.viaBrowser(() => ctx.browser!.open(url));
+      ctx.pages.set(url, { image: st.product.image, rating: st.product.rating, reviewCount: st.product.reviewCount });
+      return showPage(st, "open");
+    }
+    case "browser_action": {
+      if (!ctx.browser || !ctx.viaBrowser) throw new Error("browser unavailable");
+      const st = await ctx.viaBrowser(() =>
+        ctx.browser!.act({ action: String(args.action ?? ""), id: args.id == null ? undefined : Number(args.id), text: args.text == null ? undefined : String(args.text) }),
+      );
+      return showPage(st, String(args.action ?? ""));
+    }
     case "catalog_search": {
       const query = String(args.query ?? "").trim() || undefined;
       const b64 = args.use_photo && ctx.photo?.startsWith("data:") ? ctx.photo.slice(ctx.photo.indexOf(",") + 1) : undefined;

@@ -105,9 +105,13 @@ function applyEvent(blocks: Block[], e: AgentEvent): Block[] {
     next[idx] = { ...(next[idx] as Extract<Block, { type: "steps" }>), note: e.text.trim().slice(0, 240) };
   } else if (e.type === "block") {
     // Progressive results: a newer offer list replaces the previous cards in place.
-    const at = e.block.type === "products" ? next.findIndex((b) => b.type === "products") : -1;
+    // The live browser view updates in place, too.
+    const at =
+      e.block.type === "products" || e.block.type === "browser" ? next.findIndex((b) => b.type === e.block.type) : -1;
     if (at >= 0) next[at] = e.block;
     else next.push(e.block);
+  } else if (e.type === "browserDone") {
+    return next.map((b) => (b.type === "browser" ? { ...b, live: false } : b));
   } else if (e.type === "error") {
     next.push({ type: "error", text: e.message });
   }
@@ -303,7 +307,9 @@ export default function App() {
           blocks: assistant.blocks.map((b) =>
             b.type === "steps"
               ? { ...b, endedAt: Date.now(), steps: b.steps.map((x) => (x.status === "running" ? { ...x, status: "done" as const } : x)) }
-              : b,
+              : b.type === "browser"
+                ? { ...b, live: false }
+                : b,
           ),
         };
         await persist(true);
