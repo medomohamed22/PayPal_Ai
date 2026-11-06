@@ -102,7 +102,12 @@ export async function* streamChat(
   const body: Record<string, unknown> = {
     model: cfg.model,
     messages,
-    ...(toolChoice === "none" ? {} : { tools, tool_choice: toolChoice }),
+    // The Meta API only accepts tool_choice "auto": to force one function, offer only that tool.
+    ...(toolChoice === "none"
+      ? {}
+      : typeof toolChoice === "object"
+        ? { tools: tools.filter((t) => t.function.name === toolChoice.function.name), tool_choice: "auto" }
+        : { tools, tool_choice: toolChoice }),
     stream: true,
   };
   if (cfg.reasoningEffort) body.reasoning_effort = cfg.reasoningEffort;
