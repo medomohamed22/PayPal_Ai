@@ -12,7 +12,22 @@ import type { GroupView, Offer } from "../types";
  */
 const TTL_MS = 24 * 3600_000;
 const PENDING_MS = 15 * 60_000;
-const K = { group: (id: string) => `group:${id}`, all: "groups:all" };
+const K = { group: (id: string) => `group:${id}`, all: "groups:all", lock: (id: string) => `group:${id}:lock` };
+
+/** Serialize changes to one group (two friends paying at the same moment). */
+async function withLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
+  for (let i = 0; i < 60; i++) {
+    if (await kv.setnx(K.lock(id), 30)) {
+      try {
+        return await fn();
+      } finally {
+        await kv.del(K.lock(id)).catch(() => {});
+      }
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new GroupError("The group is busy — try again in a moment", 503, "BUSY");
+}
 
 interface Contribution {
   id: string;
@@ -142,6 +157,9 @@ export async function getGroup(id: string, device?: string): Promise<GroupView> 
 
 /** Start paying one share: a PayPal order (AUTHORIZE) for exactly that share. */
 export async function payShare(id: string, device: string | undefined, name: string, origin: string) {
+  return withLock(id, () => payShareLocked(id, device, name, origin));
+}
+async function payShareLocked(id: string, device: string | undefined, name: string, origin: string) {
   const r = await load(id);
   if (r.status !== "open") throw new GroupError("This group is closed", 409, "CLOSED");
   const live = r.contributions.filter((c) => c.status === "held" || c.status === "captured");
@@ -176,6 +194,9 @@ export async function payShare(id: string, device: string | undefined, name: str
 
 /** Buyer approved on PayPal → hold their share; when every share is held, capture them all. */
 export async function confirmShare(id: string, orderId: string, device?: string): Promise<GroupView> {
+  return withLock(id, () => confirmShareLocked(id, orderId, device));
+}
+async function confirmShareLocked(id: string, orderId: string, device?: string): Promise<GroupView> {
   const r = await load(id);
   const c = r.contributions.find((x) => x.orderId === orderId);
   if (!c) throw new GroupError("Unknown payment for this group", 404, "UNKNOWN_ORDER");
@@ -207,6 +228,9 @@ export async function confirmShare(id: string, orderId: string, device?: string)
 }
 
 export async function cancelGroup(id: string, device: string): Promise<GroupView> {
+  return withLock(id, () => cancelGroupLocked(id, device));
+}
+async function cancelGroupLocked(id: string, device: string): Promise<GroupView> {
   const r = await load(id);
   if (r.organizer !== device) throw new GroupError("Only the organizer can cancel", 403, "FORBIDDEN");
   if (r.status === "open") await release(r, "cancelled");

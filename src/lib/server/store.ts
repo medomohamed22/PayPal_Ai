@@ -15,6 +15,8 @@ interface KV {
   smembers(key: string): Promise<string[]>;
   /** Atomic counter that expires ttlSec after its first increment. */
   incr(key: string, ttlSec: number): Promise<number>;
+  /** Set only if absent (with expiry) — true when this caller got it. Used as a lock. */
+  setnx(key: string, ttlSec: number): Promise<boolean>;
 }
 
 /**
@@ -60,6 +62,7 @@ function redisKV(): KV {
       if (n === 1) await r.expire(k, ttl);
       return n;
     },
+    setnx: async (k, ttl) => (await r.set(k, "1", { nx: true, ex: ttl })) === "OK",
   };
 }
 
@@ -84,6 +87,12 @@ function memoryKV(): KV {
       const n = ((m.get(k) as number) ?? 0) + 1;
       m.set(k, n);
       return n;
+    },
+    setnx: async (k, ttl) => {
+      const until = m.get(k) as number | undefined;
+      if (until && until > Date.now()) return false;
+      m.set(k, Date.now() + ttl * 1000);
+      return true;
     },
   };
 }
