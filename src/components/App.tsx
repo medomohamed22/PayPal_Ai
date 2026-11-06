@@ -76,7 +76,7 @@ function applyEvent(blocks: Block[], e: AgentEvent): Block[] {
     // A single activity block per reply, pinned to the top.
     let idx = next.findIndex((b) => b.type === "steps");
     if (idx === -1) {
-      next.unshift({ type: "steps", steps: [] });
+      next.unshift({ type: "steps", steps: [], startedAt: Date.now() });
       idx = 0;
     }
     const sb = next[idx] as Extract<Block, { type: "steps" }>;
@@ -84,13 +84,30 @@ function applyEvent(blocks: Block[], e: AgentEvent): Block[] {
     const at = steps.findIndex((x) => x.id === e.step.id);
     if (at >= 0) steps[at] = { ...steps[at], ...e.step, detail: e.step.detail ?? steps[at].detail };
     else steps.push(e.step);
-    next[idx] = { type: "steps", steps };
+    next[idx] = { ...sb, steps };
   } else if (e.type === "text") {
     const last = next[next.length - 1];
     if (last?.type === "text") next[next.length - 1] = { type: "text", text: last.text + e.delta };
     else next.push({ type: "text", text: e.delta });
+  } else if (e.type === "thought") {
+    // The streamed narration becomes a note in the activity bar instead of the answer.
+    const last = next[next.length - 1];
+    if (last?.type === "text") {
+      const kept = last.text.endsWith(e.text) ? last.text.slice(0, -e.text.length) : last.text;
+      if (kept.trim()) next[next.length - 1] = { type: "text", text: kept };
+      else next.pop();
+    }
+    let idx = next.findIndex((b) => b.type === "steps");
+    if (idx === -1) {
+      next.unshift({ type: "steps", steps: [], startedAt: Date.now() });
+      idx = 0;
+    }
+    next[idx] = { ...(next[idx] as Extract<Block, { type: "steps" }>), note: e.text.trim().slice(0, 240) };
   } else if (e.type === "block") {
-    next.push(e.block);
+    // Progressive results: a newer offer list replaces the previous cards in place.
+    const at = e.block.type === "products" ? next.findIndex((b) => b.type === "products") : -1;
+    if (at >= 0) next[at] = e.block;
+    else next.push(e.block);
   } else if (e.type === "error") {
     next.push({ type: "error", text: e.message });
   }
@@ -206,7 +223,13 @@ export default function App() {
       await db().messages.put(userMsg);
 
       const history = toWire([...(await db().messages.where("conversationId").equals(cid).sortBy("createdAt"))]);
-      let assistant: ChatMessage = { id: uid(), conversationId: cid, role: "assistant", blocks: [], createdAt: now + 1 };
+      let assistant: ChatMessage = {
+        id: uid(),
+        conversationId: cid,
+        role: "assistant",
+        blocks: [{ type: "steps", steps: [], startedAt: Date.now() }],
+        createdAt: now + 1,
+      };
       setLive(assistant);
 
       const ctrl = new AbortController();
@@ -271,7 +294,9 @@ export default function App() {
         assistant = {
           ...assistant,
           blocks: assistant.blocks.map((b) =>
-            b.type === "steps" ? { ...b, steps: b.steps.map((x) => (x.status === "running" ? { ...x, status: "done" as const } : x)) } : b,
+            b.type === "steps"
+              ? { ...b, endedAt: Date.now(), steps: b.steps.map((x) => (x.status === "running" ? { ...x, status: "done" as const } : x)) }
+              : b,
           ),
         };
         await persist(true);

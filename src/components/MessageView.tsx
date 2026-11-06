@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm";
 import type { Strings } from "@/lib/i18n";
 import type { Block, ChatMessage, Lang, Offer, WatchMode } from "@/lib/types";
 import { WatchDraftCard } from "./Watches";
-import { ApprovalCard, LinkCard, ProductCards, StepsTimeline } from "./cards";
+import { ApprovalCard, LinkCard, OfferSkeletons, ProductCards, StepsTimeline } from "./cards";
 import Logo from "./Logo";
 
 export type ApprovalAction = "approve" | "decline" | "cancel" | "capture" | "retry" | "track" | "refund";
@@ -85,7 +85,12 @@ export default function MessageView({
         {msg.blocks.map((b, i) => {
           switch (b.type) {
             case "steps":
-              return <StepsTimeline key={i} steps={b.steps} live={live} s={s} lang={lang} />;
+              return (
+                <div key={i} className="contents">
+                  <StepsTimeline steps={b.steps} live={live} s={s} lang={lang} note={b.note} startedAt={b.startedAt} endedAt={b.endedAt} />
+                  {live && !msg.blocks.some((x) => x.type === "products") && b.steps.length > 0 && <OfferSkeletons />}
+                </div>
+              );
             case "text":
               return (
                 <div key={i} dir="auto" className="prose-dalil text-[15px] text-fg">

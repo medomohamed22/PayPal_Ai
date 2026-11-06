@@ -10,6 +10,8 @@ export interface Step {
   label: string;
   detail?: string;
   status: StepStatus;
+  /** Source sites discovered by this step (search results). */
+  hosts?: string[];
 }
 
 export type TrustLevel = "verified" | "unknown" | "suspicious";
@@ -66,7 +68,7 @@ export type Block =
   | { type: "text"; text: string }
   | { type: "image"; dataUrl: string; name?: string }
   | { type: "link"; preview: LinkPreview }
-  | { type: "steps"; steps: Step[] }
+  | { type: "steps"; steps: Step[]; note?: string; startedAt?: number; endedAt?: number }
   | { type: "products"; offers: Offer[]; note?: string }
   | {
       type: "approval";
@@ -153,6 +155,8 @@ export const KNOWN_MODELS = [
 export type AgentEvent =
   | { type: "step"; step: Step }
   | { type: "text"; delta: string }
+  /** Interim narration from a turn that continued with tools — shown in the activity bar. */
+  | { type: "thought"; text: string }
   | { type: "block"; block: Block }
   | { type: "error"; message: string }
   | { type: "done" };

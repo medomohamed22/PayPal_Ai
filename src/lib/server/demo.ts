@@ -138,11 +138,20 @@ export async function runDemo(opts: {
     { id: "d3", tool: "deal_check", label: "deal_check", detail: `${product.offers[market].length} offers` },
   ];
 
+  const hosts = product.offers[market]
+    .map((o) => (o.url ? new URL(o.url).hostname.replace(/^www\./, "") : ""))
+    .filter(Boolean);
   for (const st of steps) {
     if (signal?.aborted) return;
     emit({ type: "step", step: { ...st, status: "running" } });
-    await wait(550, signal);
-    emit({ type: "step", step: { ...st, status: "done" } });
+    await wait(650, signal);
+    emit({ type: "step", step: { ...st, status: "done", hosts: st.tool === "web_search" ? hosts : undefined } });
+    if (st.tool === "web_search") {
+      emit({
+        type: "thought",
+        text: lang === "ar" ? `لقيت ${hosts.length} متاجر، بقارن الأسعار والشحن…` : `Found ${hosts.length} stores, comparing prices and shipping…`,
+      });
+    }
   }
 
   const ranked = prepareOffers(rankOffers(product.offers[market], market));

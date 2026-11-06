@@ -153,36 +153,238 @@ function Favicon({ host, className }: { host: string; className?: string }) {
   );
 }
 
+const TIPS = {
+  ar: [
+    "💡 دليل بيقارن السعر النهائي بعد الشحن، مش سعر الرف بس",
+    "🛡️ مفيش جنيه بيتخصم من غير موافقتك — والمبلغ بيتحجز الأول",
+    "🔍 بيكشف الخصومات الوهمية والمتاجر المشبوهة",
+    "🔔 تقدر تقوله «راقب السعر» ويبلغك أول ما ينزل",
+    "📍 بيحسب المسافة لأقرب محل لو حابب تستلم بنفسك",
+  ],
+  en: [
+    "💡 Dalil compares the total cost after shipping, not just the sticker price",
+    "🛡️ Nothing is charged without your approval — funds are held first",
+    "🔍 It flags fake discounts and suspicious stores",
+    "🔔 Say “watch the price” and it alerts you when it drops",
+    "📍 It measures the distance to the nearest store for pickup",
+  ],
+};
+
+function useClock(startedAt?: number, endedAt?: number, live?: boolean) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!live) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [live]);
+  if (!startedAt) return 0;
+  return Math.max(0, Math.round(((endedAt ?? now) - startedAt) / 1000));
+}
+
+function RadarMark() {
+  return (
+    <span className="relative flex size-9 shrink-0 items-center justify-center">
+      {[0, 1, 2].map((i) => (
+        <motion.span
+          key={i}
+          className="absolute inset-0 rounded-full border border-fg/30"
+          initial={{ scale: 0.5, opacity: 0.8 }}
+          animate={{ scale: 1.6, opacity: 0 }}
+          transition={{ duration: 2.4, repeat: Infinity, delay: i * 0.8, ease: "easeOut" }}
+        />
+      ))}
+      <motion.span
+        className="absolute inset-1 rounded-full"
+        style={{ background: "conic-gradient(from 0deg, transparent 0deg, color-mix(in srgb, var(--fg) 22%, transparent) 70deg, transparent 90deg)" }}
+        animate={{ rotate: 360 }}
+        transition={{ duration: 2.2, repeat: Infinity, ease: "linear" }}
+      />
+      <span className="relative flex size-6 items-center justify-center rounded-full bg-inv-bg text-inv-fg">
+        <svg viewBox="0 0 24 24" width={14} height={14}>
+          <path d="M12 3.5 L15 12 L12 10.6 L9 12 Z" fill="currentColor" />
+          <path d="M12 20.5 L9 12 L12 13.4 L15 12 Z" fill="currentColor" opacity="0.45" />
+        </svg>
+      </span>
+    </span>
+  );
+}
+
 /**
- * One compact activity line per reply (instead of a row + icon per tool call).
- * Running: current step with shimmer + favicons of visited sites.
- * Done: collapsed summary; tap to see the plain-text list.
+ * Live search experience. While running: radar, timer, 3-stage tracker, the
+ * agent's current thought, discovered sites and rotating tips. When done it
+ * collapses into a one-line summary (tap to see the plain-text steps).
  */
 export function StepsTimeline({
   steps,
   live,
   s,
   lang,
+  note,
+  startedAt,
+  endedAt,
 }: {
   steps: Step[];
   live: boolean;
   s: Strings;
   lang: Lang;
+  note?: string;
+  startedAt?: number;
+  endedAt?: number;
 }) {
   const [open, setOpen] = useState(false);
   const ar = lang === "ar";
-  const running = live && steps.some((x) => x.status === "running");
+  const running = live;
+  const secs = useClock(startedAt, live ? undefined : endedAt, live);
+  const [tip, setTip] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => setTip((t) => t + 1), 4500);
+    return () => clearInterval(id);
+  }, [running]);
+
   const current = [...steps].reverse().find((x) => x.status === "running") ?? steps[steps.length - 1];
-  const hosts = Array.from(new Set(steps.filter((x) => x.tool === "browse_url" && x.detail).map((x) => x.detail!)));
+  const browsed = steps.filter((x) => x.tool === "browse_url" && x.detail);
+  const found = Array.from(new Set(steps.flatMap((x) => x.hosts ?? [])));
+  const allHosts = Array.from(new Set([...browsed.map((x) => x.detail!), ...found]));
   const searches = steps.filter((x) => x.tool === "web_search").length;
+  const sites = new Set(browsed.map((b) => b.detail)).size;
   const n = (v: number) => v.toLocaleString(ar ? "ar-EG-u-nu-latn" : "en-US");
+  const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+
+  const stage = steps.some((x) => x.tool === "show_offers")
+    ? 3
+    : steps.some((x) => x.tool === "browse_url")
+      ? 2
+      : steps.length
+        ? 1
+        : 0;
+  const stages = ar ? ["بحث", "تصفّح", "مقارنة"] : ["Search", "Browse", "Compare"];
+
   const summary = [
     searches ? (ar ? `بحث ${n(searches)} ${searches === 1 ? "مرة" : "مرات"}` : `${searches} search${searches > 1 ? "es" : ""}`) : null,
-    hosts.length ? (ar ? `تصفّح ${n(hosts.length)} ${hosts.length === 1 ? "موقع" : "مواقع"}` : `${hosts.length} site${hosts.length > 1 ? "s" : ""}`) : null,
-    !searches && !hosts.length ? (ar ? `${n(steps.length)} خطوات` : `${steps.length} steps`) : null,
+    sites ? (ar ? `تصفّح ${n(sites)} ${sites === 1 ? "موقع" : "مواقع"}` : `${sites} site${sites > 1 ? "s" : ""}`) : null,
+    secs ? (ar ? `${n(secs)} ث` : `${secs}s`) : null,
   ]
     .filter(Boolean)
     .join(" · ");
+
+  if (running) {
+    const tips = TIPS[lang];
+    return (
+      <motion.div
+        layout
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-xl overflow-hidden rounded-3xl border border-line bg-bg-soft"
+      >
+        <div className="flex items-center gap-3 px-3.5 pt-3.5">
+          <RadarMark />
+          <div className="min-w-0 flex-1">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={current ? `${current.id}-${current.status}` : "start"}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.2 }}
+                className="shimmer truncate text-sm font-semibold"
+                dir="auto"
+              >
+                {current
+                  ? `${stepLabel(current.tool, s, lang)}${current.detail && current.tool === "browse_url" ? ` ${current.detail}` : ""}`
+                  : ar
+                    ? "بيفهم طلبك…"
+                    : "Understanding your request…"}
+              </motion.div>
+            </AnimatePresence>
+            <AnimatePresence mode="wait" initial={false}>
+              {note && (
+                <motion.p
+                  key={note}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="mt-0.5 line-clamp-2 text-xs leading-snug text-fg-muted"
+                  dir="auto"
+                >
+                  {note}
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
+          <span className="shrink-0 rounded-full bg-bg px-2 py-0.5 font-mono text-[11px] tabular-nums text-fg-muted" dir="ltr">
+            {clock}
+          </span>
+        </div>
+
+        {/* 3-stage tracker */}
+        <div className="mt-3 flex items-center gap-1.5 px-3.5">
+          {stages.map((label, i) => {
+            const done = stage > i + 1;
+            const active = stage === i + 1;
+            return (
+              <div key={label} className="flex flex-1 flex-col gap-1">
+                <div className="relative h-1 overflow-hidden rounded-full bg-line">
+                  <motion.div
+                    className="absolute inset-y-0 rounded-full bg-fg ltr:left-0 rtl:right-0"
+                    initial={{ width: 0 }}
+                    animate={{ width: done ? "100%" : active ? ["15%", "85%", "15%"] : "0%" }}
+                    transition={active ? { duration: 2.4, repeat: Infinity, ease: "easeInOut" } : { duration: 0.5 }}
+                  />
+                </div>
+                <span className={`text-[10px] ${done || active ? "font-semibold text-fg" : "text-fg-muted"}`}>{label}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Discovered sites */}
+        {allHosts.length > 0 && (
+          <div className="no-scrollbar mt-2.5 flex gap-1.5 overflow-x-auto px-3.5">
+            <AnimatePresence initial={false}>
+              {allHosts.slice(-10).map((h) => {
+                const st = browsed.filter((b) => b.detail === h).pop()?.status;
+                return (
+                  <motion.span
+                    key={h}
+                    layout
+                    initial={{ opacity: 0, scale: 0.7, y: 6 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ type: "spring", stiffness: 420, damping: 24 }}
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border bg-bg py-1 ps-1 pe-2.5 text-[11px] ${
+                      st === "error" ? "border-line text-fg-muted line-through" : "border-line"
+                    }`}
+                  >
+                    <Favicon host={h} className="size-4 border-0" />
+                    <span dir="ltr">{h}</span>
+                    {st === "running" && <Loader2 className="size-3 animate-spin text-fg-muted" />}
+                  </motion.span>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {/* Rotating tips */}
+        <div className="mt-3 border-t border-line px-3.5 py-2.5">
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.p
+              key={tip % tips.length}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.3 }}
+              className="text-[11.5px] text-fg-muted"
+            >
+              {tips[tip % tips.length]}
+            </motion.p>
+          </AnimatePresence>
+        </div>
+      </motion.div>
+    );
+  }
+
+  if (!steps.length) return null;
 
   return (
     <div className="w-full max-w-xl">
@@ -190,37 +392,14 @@ export function StepsTimeline({
         onClick={() => setOpen((o) => !o)}
         className="group flex max-w-full items-center gap-2.5 rounded-full border border-line bg-bg-soft py-1.5 ps-2 pe-3 text-[13px] transition-colors hover:border-line-strong"
       >
-        <span className="relative flex size-4 shrink-0 items-center justify-center">
-          {running ? (
-            <>
-              <span className="absolute inset-0 animate-ping rounded-full bg-fg/20" />
-              <span className="size-2 rounded-full bg-fg" />
-            </>
-          ) : (
-            <Check className="size-3.5" />
-          )}
+        <Check className="size-3.5 shrink-0" />
+        <span className="min-w-0 truncate text-fg-soft" dir="auto">
+          {summary || (ar ? "خلص" : "Done")}
         </span>
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.span
-            key={running ? `${current?.id}-${current?.status}` : "done"}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.18 }}
-            className={`min-w-0 truncate ${running ? "shimmer font-medium" : "text-fg-soft"}`}
-            dir="auto"
-          >
-            {running && current
-              ? `${stepLabel(current.tool, s, lang)}${current.detail && current.tool === "browse_url" ? ` ${current.detail}` : ""}`
-              : summary}
-          </motion.span>
-        </AnimatePresence>
-        {hosts.length > 0 && (
+        {allHosts.length > 0 && (
           <span className="flex shrink-0 items-center -space-x-1.5 rtl:space-x-reverse">
-            {hosts.slice(-4).map((h) => (
-              <motion.span key={h} initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 400, damping: 20 }}>
-                <Favicon host={h} className="size-[18px]" />
-              </motion.span>
+            {allHosts.slice(0, 4).map((h) => (
+              <Favicon key={h} host={h} className="size-[18px]" />
             ))}
           </span>
         )}
@@ -236,12 +415,17 @@ export function StepsTimeline({
             exit={{ height: 0, opacity: 0 }}
             className="mt-2 space-y-1 overflow-hidden ps-3 text-[12.5px]"
           >
+            {note && (
+              <li className="pb-1 text-fg-muted" dir="auto">
+                “{note}”
+              </li>
+            )}
             {steps.map((st) => (
               <li key={st.id} className="flex min-w-0 items-center gap-2 text-fg-muted">
                 {st.tool === "browse_url" && st.detail ? (
                   <Favicon host={st.detail} className="size-3.5 shrink-0 border-0" />
                 ) : (
-                  <span className={`size-1.5 shrink-0 rounded-full ${st.status === "error" ? "bg-danger" : st.status === "running" ? "animate-pulse bg-fg" : "bg-fg-muted"}`} />
+                  <span className={`size-1.5 shrink-0 rounded-full ${st.status === "error" ? "bg-danger" : "bg-fg-muted"}`} />
                 )}
                 <span className="shrink-0 text-fg-soft">{stepLabel(st.tool, s, lang)}</span>
                 {st.detail && (
@@ -249,12 +433,45 @@ export function StepsTimeline({
                     {st.detail}
                   </span>
                 )}
-                {st.status === "error" && <span className="shrink-0 text-danger">✕</span>}
+                {st.status === "error" && <span className="shrink-0 text-[11px]">{ar ? "محجوب" : "blocked"}</span>}
               </li>
             ))}
           </motion.ul>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/** Shimmering placeholder cards while offers are being found. */
+export function OfferSkeletons() {
+  return (
+    <div className="-mx-4 w-[calc(100%+2rem)] sm:mx-0 sm:w-full">
+      <div className="no-scrollbar flex gap-3 overflow-hidden px-4 pb-2 pt-1 sm:px-0">
+        {[0, 1, 2].map((i) => (
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 + i * 0.1 }}
+            className="relative w-[15.5rem] shrink-0 overflow-hidden rounded-2xl border border-line bg-bg"
+          >
+            <div className="h-28 bg-bg-muted" />
+            <div className="space-y-2 p-3">
+              <div className="h-3 w-1/3 rounded bg-bg-muted" />
+              <div className="h-3 w-5/6 rounded bg-bg-muted" />
+              <div className="h-5 w-1/2 rounded bg-bg-muted" />
+              <div className="h-8 rounded-xl bg-bg-muted" />
+            </div>
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent dark:via-white/5"
+              initial={{ x: "-100%" }}
+              animate={{ x: "100%" }}
+              transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut", delay: i * 0.15 }}
+            />
+          </motion.div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -111,8 +111,8 @@ Reply in ${lang === "ar" ? "Egyptian Arabic" : "English"} unless the user writes
 
 How to work:
 1. Identify the exact product. If the user sent a photo, identify brand/model/variant from it. If they sent a link, browse it first.
-2. Be FAST: the user is waiting. One web_search call with 2-3 queries, then (only if prices/images are missing) ONE turn of parallel browse_url calls on the 3-5 best product pages, then show_offers. Never browse pages one at a time. Never do more than 2 search turns. Use web_search (include "${city}" / "${country}" for local stores) and browse_url to get real prices. Prefer official and well-known retailers in ${country}. Compare the TOTAL cost (price + shipping), not just the sticker price. Include nearby physical stores with distance when you know it.
-3. Call show_offers with 2-8 real offers. Never invent URLs, prices, ratings or stores — only use facts from tool results. If a fact is unknown, omit it.
+2. Be fast but thorough. Start with ONE web_search call carrying 2-3 different queries (official store, big marketplaces, local shops in ${city}). Search results often already contain prices — use them. Browse only pages whose price/image is missing, several in ONE turn (they run in parallel). If a page is blocked or errors, do NOT retry it — rely on search-result prices. You may search again with new angles if results are thin. Prefer official and well-known retailers in ${country}. Compare the TOTAL cost (price + shipping). Include nearby physical stores with distance when known. Each tool result ends with the time left; when it is under 15s, finish.
+3. Call show_offers as soon as you have 2+ real offers — the user sees them immediately — and call it again later with a better/larger list if you keep searching (it replaces the cards). 2-8 real offers. Never invent URLs, prices, ratings or stores — only use facts from tool results. If a fact is unknown, omit it.
 4. After show_offers, write 1-3 short sentences: the recommendation and why (using the returned ranking and any flags such as suspicious_discount or price_far_below_market).
 5. Only call request_purchase_approval when the user clearly wants to buy a specific offer. You can never pay any other way.
 6. If the user wants to wait for a better price ("watch", "tell me when it drops", "buy if under X"), find the product first, then call propose_watch with the best offer, the target price and mode ("auto" only if they asked to buy automatically).
@@ -159,17 +159,39 @@ export interface RunOptions {
   emit: (e: AgentEvent) => void;
 }
 
+const MAX_ROUNDS = 8;
+const TIME_BUDGET_MS = Number(process.env.DALIL_TIME_BUDGET_MS) || 60_000;
+
 export async function runAgent(opts: RunOptions): Promise<void> {
   const { cfg, market, city, lang, emit, signal } = opts;
+  const started = Date.now();
   const pages = new Map<string, { image?: string; rating?: number; reviewCount?: number }>();
+  const state = { offersShown: false };
   const messages: ChatMsg[] = [
     { role: "developer", content: developerPrompt(market, city, lang, opts.coords) },
     ...toChatMessages(opts.history),
   ];
 
-  for (let round = 0; round < 6; round++) {
+  for (let round = 0; round < MAX_ROUNDS; round++) {
     if (signal?.aborted) return;
-    const gen = streamChat(cfg, messages, TOOLS, signal);
+    const outOfTime = Date.now() - started > TIME_BUDGET_MS;
+    const lastRound = round === MAX_ROUNDS - 1 || outOfTime;
+
+    // Never leave the user without results: at the end, force a decision.
+    let choice: Parameters<typeof streamChat>[4] = "auto";
+    if (lastRound && !state.offersShown && round > 0) {
+      messages.push({
+        role: "developer",
+        content:
+          "Time is up. Call show_offers NOW with the best real offers you already have (prices from search results are fine, even if pages were blocked). Do not search or browse again.",
+      });
+      choice = { type: "function", function: { name: "show_offers" } };
+    } else if (lastRound && state.offersShown) {
+      messages.push({ role: "developer", content: "Time is up. Give your final 1-3 sentence recommendation now. No more tools." });
+      choice = "none";
+    }
+
+    const gen = streamChat(cfg, messages, TOOLS, signal, choice);
     let result: { toolCalls: { id: string; name: string; arguments: string }[]; text: string };
     while (true) {
       const n = await gen.next();
@@ -181,6 +203,9 @@ export async function runAgent(opts: RunOptions): Promise<void> {
     }
 
     if (!result.toolCalls.length) return;
+
+    // Text written before tool calls is narration — move it into the activity bar.
+    if (result.text.trim()) emit({ type: "thought", text: result.text });
 
     messages.push({
       role: "assistant",
@@ -209,18 +234,33 @@ export async function runAgent(opts: RunOptions): Promise<void> {
         if (call.name === "browse_url") step.detail = hostOf(String(args.url ?? ""));
         emit({ type: "step", step });
         try {
-          const output = await execTool(call.name, args, { cfg, market, emit, signal, pages });
-          emit({ type: "step", step: { ...step, status: "done" } });
+          const output = await execTool(call.name, args, { cfg, market, emit, signal, pages, state });
+          const hosts =
+            call.name === "web_search" && Array.isArray(output)
+              ? Array.from(
+                  new Set(
+                    (output as Array<{ sources?: Array<{ url: string }> }>)
+                      .flatMap((r) => r.sources ?? [])
+                      .map((x) => hostOf(x.url)),
+                  ),
+                ).slice(0, 8)
+              : undefined;
+          emit({ type: "step", step: { ...step, status: "done", hosts } });
           return output;
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           emit({ type: "step", step: { ...step, status: "error" } });
-          return { error: msg };
+          return { error: msg, hint: call.name === "browse_url" ? "Page blocked or slow — use prices from search results instead." : undefined };
         }
       }),
     );
+    const left = Math.max(0, Math.round((TIME_BUDGET_MS - (Date.now() - started)) / 1000));
     result.toolCalls.forEach((call, i) =>
-      messages.push({ role: "tool", tool_call_id: call.id, content: clip(JSON.stringify(outputs[i]), 9000) }),
+      messages.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: clip(JSON.stringify(outputs[i]), 9000) + (i === result.toolCalls.length - 1 ? `\n[time left: ${left}s]` : ""),
+      }),
     );
   }
 }
@@ -234,6 +274,7 @@ async function execTool(
     emit: (e: AgentEvent) => void;
     signal?: AbortSignal;
     pages: Map<string, { image?: string; rating?: number; reviewCount?: number }>;
+    state: { offersShown: boolean };
   },
 ): Promise<unknown> {
   switch (name) {
@@ -270,6 +311,7 @@ async function execTool(
       });
       const ranked = prepareOffers(rankOffers(raw, ctx.market));
       if (!ranked.length) throw new Error("no valid offers");
+      ctx.state.offersShown = true;
       ctx.emit({ type: "block", block: { type: "products", offers: ranked } });
       return {
         shown: ranked.length,

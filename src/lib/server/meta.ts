@@ -96,13 +96,13 @@ export async function* streamChat(
   messages: ChatMsg[],
   tools: FunctionTool[],
   signal?: AbortSignal,
+  toolChoice: "auto" | "none" | { type: "function"; function: { name: string } } = "auto",
 ): AsyncGenerator<{ text: string }, { toolCalls: ToolCall[]; text: string }> {
   const b = await base(cfg);
   const body: Record<string, unknown> = {
     model: cfg.model,
     messages,
-    tools,
-    tool_choice: "auto",
+    ...(toolChoice === "none" ? {} : { tools, tool_choice: toolChoice }),
     stream: true,
   };
   if (cfg.reasoningEffort) body.reasoning_effort = cfg.reasoningEffort;
@@ -196,7 +196,7 @@ export async function webSearch(cfg: MetaConfig, query: string, signal?: AbortSi
       reasoning: { effort: "minimal" },
       max_output_tokens: 1200,
     }),
-    timeoutMs: 90000,
+    timeoutMs: 25000,
     signal,
   });
   if (res.status === 400) {
@@ -205,7 +205,7 @@ export async function webSearch(cfg: MetaConfig, query: string, signal?: AbortSi
       method: "POST",
       headers: headers(cfg),
       body: JSON.stringify({ model: cfg.model, input: `List concrete shopping offers (store | product | price | URL).\n\nQuery: ${query}`, tools: [{ type: "web_search" }] }),
-      timeoutMs: 90000,
+      timeoutMs: 20000,
       signal,
     });
   }
