@@ -119,7 +119,7 @@ export async function runDemo(opts: {
     CATALOG.find((p) => p.keys.some((k) => q.includes(k))) ??
     (code || opts.hasImage ? CATALOG[1] : CATALOG[0]);
   const wantsWatch = /watch|track|راقب|تابع|لو نزل|if it drops|under|تحت/.test(q);
-  const wantsBuy = /\b(buy|order|purchase)\b|اشتري|اشتريه|اطلب/.test(q) && !wantsWatch;
+  const wantsBuy = /\b(buy|order|purchase|negotiate|haggle)\b|اشتري|اشتريه|اطلب|فاوض/.test(q) && !wantsWatch;
   const wantsAuto = wantsWatch && /\b(buy|auto)\b|اشتري|اشتريها|اشتريه|تلقائي/.test(q);
   // Numbers in the message (Arabic-Indic digits too) → target price.
   const nums = (q.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d))).replace(/[,٬]/g, "").match(/\d+(\.\d+)?/g) ?? [])

@@ -26,12 +26,14 @@ import {
   PackageSearch,
   ScanBarcode,
   MousePointerClick,
+  Handshake,
   AppWindow,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatMoney, type Strings } from "@/lib/i18n";
 import PayLaterMessage from "./PayLater";
-import type { ApprovalStatus, Block, Lang, LinkPreview, Offer, Step } from "@/lib/types";
+import { NegotiationPanel } from "./Negotiation";
+import type { ApprovalStatus, Block, Lang, LinkPreview, Negotiation, Offer, Step } from "@/lib/types";
 
 /* ---------- Image with graceful fallback ---------- */
 
@@ -942,7 +944,11 @@ export function ApprovalCard({
   refund,
   onTrack,
   onRefund,
+  negotiation,
+  onNegotiate,
 }: {
+  negotiation?: Negotiation;
+  onNegotiate?: () => void;
   offer: Offer;
   status: ApprovalStatus;
   message?: string;
@@ -1018,7 +1024,14 @@ export function ApprovalCard({
           </div>
           <div className="flex justify-between border-t border-line pt-1.5 font-semibold">
             <dt>{s.total}</dt>
-            <dd className="tabular-nums">{formatMoney(offer.total, offer.currency, lang)}</dd>
+            <dd className="flex items-baseline gap-2 tabular-nums">
+              {negotiation && negotiation.original.total > offer.total ? (
+                <span className="text-xs font-normal text-fg-muted line-through">{formatMoney(negotiation.original.total, offer.currency, lang)}</span>
+              ) : null}
+              <motion.span key={offer.total} initial={{ scale: 1.15 }} animate={{ scale: 1 }}>
+                {formatMoney(offer.total, offer.currency, lang)}
+              </motion.span>
+            </dd>
           </div>
           {converted && (
             <div className="flex justify-between text-xs text-fg-muted">
@@ -1048,9 +1061,21 @@ export function ApprovalCard({
           </div>
         )}
 
+        {negotiation && <NegotiationPanel neg={negotiation} offer={offer} lang={lang} />}
+
         <AnimatePresence mode="wait">
           {status === "pending" ? (
             <motion.div key="actions" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2">
+              {onNegotiate && offer.trust !== "suspicious" && (!negotiation || negotiation.status === "failed") && (
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  onClick={onNegotiate}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-line-strong py-2.5 text-sm font-medium transition-colors hover:bg-bg-soft"
+                >
+                  <Handshake className="size-4" />
+                  {lang === "ar" ? "خلّي دليل يفاوض على سعر أحسن" : "Let Dalil negotiate a better price"}
+                </motion.button>
+              )}
               <PayLaterMessage
                 amount={offer.chargeAmount ?? offer.total}
                 currency={offer.chargeCurrency ?? offer.currency}
@@ -1060,7 +1085,8 @@ export function ApprovalCard({
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.97 }}
                 onClick={onApprove}
-                className="relative w-full overflow-hidden rounded-2xl bg-inv-bg py-3.5 text-sm font-semibold text-inv-fg"
+                disabled={negotiation?.status === "running"}
+                className="relative w-full overflow-hidden rounded-2xl bg-inv-bg py-3.5 text-sm font-semibold text-inv-fg transition-opacity disabled:opacity-40"
               >
                 <span className="relative z-10">{s.approveBtn}</span>
                 <motion.span

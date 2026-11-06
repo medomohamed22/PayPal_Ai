@@ -11,7 +11,7 @@ import { InsightCard } from "./Insight";
 import { ApprovalCard, BrowserCard, LinkCard, OfferSkeletons, ProductCards, StepsTimeline } from "./cards";
 import Logo from "./Logo";
 
-export type ApprovalAction = "approve" | "decline" | "cancel" | "capture" | "retry" | "track" | "refund";
+export type ApprovalAction = "approve" | "decline" | "cancel" | "capture" | "retry" | "track" | "refund" | "negotiate";
 
 export default function MessageView({
   msg,
@@ -121,6 +121,8 @@ export default function MessageView({
                   lang={lang}
                   onApprove={() => onApproval(msg.id, i, "approve")}
                   onDecline={() => onApproval(msg.id, i, "decline")}
+                  negotiation={b.negotiation}
+                  onNegotiate={() => onApproval(msg.id, i, "negotiate")}
                   onCancelHold={() => onApproval(msg.id, i, "cancel")}
                   onCaptureNow={() => onApproval(msg.id, i, "capture")}
                   onRetry={() => onApproval(msg.id, i, "retry")}

@@ -73,6 +73,8 @@ export type Block =
   | {
       type: "approval";
       offer: Offer;
+      /** Agent-to-agent negotiation that produced (or tried to improve) this offer. */
+      negotiation?: Negotiation;
       status: ApprovalStatus;
       orderId?: string;
       authorizationId?: string;
@@ -233,4 +235,20 @@ export interface PriceInsight {
   event?: { id: string; en: string; ar: string; date: string; daysAway: number; drop: number };
   /** channel3 = catalog history · dalil = prices Dalil recorded · sample = demo data · none = no history yet */
   source: "channel3" | "dalil" | "sample" | "none";
+}
+
+/** Agent-to-agent negotiation stream (buyer = Dalil, seller = the store's agent). */
+export type NegotiationEvent =
+  | { type: "typing"; from: "dalil" | "seller" }
+  | { type: "msg"; from: "dalil" | "seller"; text: string; price?: number; shipping?: number }
+  | { type: "done"; offer: Offer | null; saved: number; transport: "http" | "local" }
+  | { type: "error"; message: string };
+
+export interface Negotiation {
+  status: "running" | "done" | "failed";
+  messages: Array<{ from: "dalil" | "seller"; text: string; price?: number }>;
+  typing?: "dalil" | "seller";
+  original: { price: number; shipping: number; total: number };
+  saved?: number;
+  transport?: "http" | "local";
 }

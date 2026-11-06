@@ -32,6 +32,8 @@ import {
   type Watch,
   type WatchMode,
   type WireMessage,
+  type Negotiation,
+  type NegotiationEvent,
 } from "@/lib/types";
 import Composer, { type ComposerPayload } from "./Composer";
 import Logo from "./Logo";
@@ -349,6 +351,60 @@ export default function App() {
     }
   };
 
+  /** Agent-to-agent negotiation: Dalil's buyer agent talks to the store's seller agent. */
+  const negotiateBlock = async (msgId: string, idx: number) => {
+    const m = await db().messages.get(msgId);
+    const block = m?.blocks[idx];
+    if (!m || block?.type !== "approval" || block.status !== "pending" || block.negotiation?.status === "running") return;
+    const offer = block.offer;
+    // Cheapest trustworthy competitor shown in the same reply — a real argument for the seller.
+    const competitor = m.blocks
+      .flatMap((b) => (b.type === "products" ? b.offers : []))
+      .filter((o) => o.store !== offer.store && o.trust !== "suspicious" && o.currency === offer.currency && o.total < offer.total)
+      .sort((a, b) => a.total - b.total)[0];
+    let neg: Negotiation = {
+      status: "running",
+      messages: [],
+      original: { price: offer.price, shipping: offer.shipping ?? 0, total: offer.total },
+    };
+    await updateBlock(msgId, idx, { negotiation: neg });
+    try {
+      const res = await fetch("/api/negotiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ offer, lang: settings.lang, competitor: competitor ? { store: competitor.store, total: competitor.total } : undefined }),
+      });
+      if (!res.ok || !res.body) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl);
+          buf = buf.slice(nl + 1);
+          if (!line.trim()) continue;
+          const ev = JSON.parse(line) as NegotiationEvent;
+          if (ev.type === "typing") neg = { ...neg, typing: ev.from };
+          else if (ev.type === "msg") neg = { ...neg, typing: undefined, messages: [...neg.messages, { from: ev.from, text: ev.text, price: ev.price }] };
+          else if (ev.type === "error") throw new Error(ev.message);
+          else if (ev.type === "done") {
+            neg = { ...neg, typing: undefined, status: "done", saved: ev.saved, transport: ev.transport };
+            await updateBlock(msgId, idx, ev.offer ? { negotiation: neg, offer: ev.offer } : { negotiation: neg });
+            continue;
+          }
+          await updateBlock(msgId, idx, { negotiation: neg });
+        }
+      }
+    } catch (err) {
+      await updateBlock(msgId, idx, { negotiation: { ...neg, typing: undefined, status: "failed" } });
+      pushToast({ title: ar ? "التفاوض ماكملش" : "Negotiation failed", body: String((err as Error).message ?? err) });
+    }
+  };
+
   /* ---------------- Price watches ---------------- */
 
   const pushToast = useCallback((t: Omit<Toast, "id">) => {
@@ -618,6 +674,7 @@ export default function App() {
 
   const onApproval = async (msgId: string, idx: number, action: ApprovalAction, reason?: string) => {
     if (action === "decline") return updateBlock(msgId, idx, { status: "declined" });
+    if (action === "negotiate") return negotiateBlock(msgId, idx);
     if (action === "retry") return updateBlock(msgId, idx, { status: "pending", message: undefined });
 
     // Approve: open the window synchronously (before any await) so popup blockers allow it.

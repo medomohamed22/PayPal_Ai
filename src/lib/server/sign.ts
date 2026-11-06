@@ -54,3 +54,24 @@ export function verifyOffer(o: Offer): boolean {
   const got = Buffer.from(sig);
   return expected.length === got.length && timingSafeEqual(expected, got);
 }
+
+/** Generic signed, expiring token (used for stateless agent-to-agent sessions). */
+export function signToken(data: object, ttlMs = 15 * 60 * 1000): string {
+  const body = Buffer.from(JSON.stringify({ d: data, exp: Date.now() + ttlMs })).toString("base64url");
+  return `${body}.${createHmac("sha256", secret()).update(`tok.${body}`).digest("base64url")}`;
+}
+
+export function verifyToken<T>(token: string | undefined): T | null {
+  if (!token) return null;
+  const [body, sig] = token.split(".");
+  if (!body || !sig) return null;
+  const expected = Buffer.from(createHmac("sha256", secret()).update(`tok.${body}`).digest("base64url"));
+  const got = Buffer.from(sig);
+  if (expected.length !== got.length || !timingSafeEqual(expected, got)) return null;
+  try {
+    const { d, exp } = JSON.parse(Buffer.from(body, "base64url").toString());
+    return exp > Date.now() ? (d as T) : null;
+  } catch {
+    return null;
+  }
+}
