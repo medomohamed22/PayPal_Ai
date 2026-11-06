@@ -1,7 +1,7 @@
 "use client";
 
 import { animate, AnimatePresence, motion } from "framer-motion";
-import { Handshake, PiggyBank, ShieldCheck, ShoppingBag, X } from "lucide-react";
+import { HandCoins, Handshake, ShieldCheck, ShoppingBag, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { db } from "@/lib/db";
@@ -106,7 +106,7 @@ export default function SavingsPanel({
           >
             <div className="flex items-center justify-between px-5 py-4">
               <h2 className="flex items-center gap-2 text-base font-semibold">
-                <PiggyBank className="size-4" /> {ar ? "مشترياتي وتوفيري" : "My purchases & savings"}
+                <HandCoins className="size-4" /> {ar ? "مشترياتي وتوفيري" : "My purchases & savings"}
               </h2>
               <button onClick={onClose} className="rounded-full p-1.5 hover:bg-bg-soft" aria-label="Close">
                 <X className="size-4" />
@@ -156,7 +156,7 @@ export default function SavingsPanel({
 
               {rows && rows.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 py-12 text-center text-sm text-fg-muted">
-                  <PiggyBank className="size-8" strokeWidth={1.25} />
+                  <HandCoins className="size-8" strokeWidth={1.25} />
                   {ar ? "لسه مفيش مشتريات — أول ما تشتري هتلاقي توفيرك هنا." : "No purchases yet — your savings will show up here."}
                 </div>
               ) : rows ? (

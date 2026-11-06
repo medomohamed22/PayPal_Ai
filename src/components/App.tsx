@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Bell, Menu, Moon, PanelLeft, PiggyBank, Plus, Settings2, Sun, Trash2, X } from "lucide-react";
+import { Bell, HandCoins, Menu, Moon, PanelLeft, Plus, Settings2, Sun, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { db, getKV, loadSettings, requestPersistence, saveSettings, setKV, uid } from "@/lib/db";
 import {
@@ -152,6 +152,8 @@ export default function App() {
   const prevStatus = useRef<Map<string, Watch["status"]>>(new Map());
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** A purchase card to bring into view (e.g. right after tapping "Buy"). */
+  const [focusMsg, setFocusMsg] = useState<string | null>(null);
   const s = t(settings.lang);
   const ar = settings.lang === "ar";
 
@@ -207,8 +209,19 @@ export default function App() {
     const el = scrollRef.current;
     if (!el) return;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 240;
+    if (focusMsg) return; // a purchase card is being brought into view instead
     if (nearBottom || live) el.scrollTo({ top: el.scrollHeight, behavior: live ? "auto" : "smooth" });
-  }, [messages, live]);
+  }, [messages, live, focusMsg]);
+
+  // Tapping "Buy" anywhere: scroll the new purchase card into view and highlight it.
+  useEffect(() => {
+    if (!focusMsg) return;
+    const el = document.getElementById(`msg-${focusMsg}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    const t = setTimeout(() => setFocusMsg(null), 2200);
+    return () => clearTimeout(t);
+  }, [focusMsg, messages]);
 
   const busy = !!live;
 
@@ -341,13 +354,15 @@ export default function App() {
     if (!convId) return;
     const msgs = await db().messages.where("conversationId").equals(convId).sortBy("createdAt");
     const lists = msgs.flatMap((m) => m.blocks.flatMap((b) => (b.type === "products" ? [b.offers] : [])));
+    const id = uid();
     await db().messages.put({
-      id: uid(),
+      id,
       conversationId: convId,
       role: "assistant",
       blocks: [{ type: "approval", offer, status: "pending", context: purchaseContext(offer, lists) }],
       createdAt: Date.now(),
     });
+    setFocusMsg(id);
   };
 
   const updateBlock = async (msgId: string, idx: number, patch: Partial<Extract<Block, { type: "approval" }>>) => {
@@ -441,8 +456,10 @@ export default function App() {
         await db().conversations.put({ id: cid, title: `🔔 ${w.title}`.slice(0, 60), createdAt: Date.now(), updatedAt: Date.now() });
         setConvId(cid);
       }
+      const focusId = uid();
+      setFocusMsg(focusId);
       await db().messages.put({
-        id: uid(),
+        id: focusId,
         conversationId: cid,
         role: "assistant",
         blocks: [{ type: "approval", offer: w.triggeredOffer, status: "pending", watchId: w.id }],
@@ -870,7 +887,7 @@ export default function App() {
           }}
           className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm hover:bg-bg-muted"
         >
-          <PiggyBank className="size-4" />
+          <HandCoins className="size-4" />
           {ar ? "مشترياتي وتوفيري" : "Purchases & savings"}
         </button>
         <button
@@ -1021,8 +1038,12 @@ export default function App() {
             ) : (
               <div className="space-y-7 pt-4">
                 {messages.map((m) => (
-                  <MessageView
+                  <div
                     key={m.id}
+                    id={`msg-${m.id}`}
+                    className={`scroll-mt-4 rounded-3xl transition-shadow ${focusMsg === m.id ? "focus-flash" : ""}`}
+                  >
+                  <MessageView
                     msg={m}
                     live={live?.id === m.id}
                     s={s}
@@ -1034,6 +1055,7 @@ export default function App() {
                     city={settings.city}
                     onApproval={onApproval}
                   />
+                  </div>
                 ))}
               </div>
             )}

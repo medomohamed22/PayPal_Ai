@@ -241,6 +241,13 @@ html[dir="rtl"] .shimmer {
 .savings-grid .ag-layout-auto-height {
   min-height: 0 !important;
 }
+.focus-flash {
+  animation: focus-flash 2s ease-out;
+}
+@keyframes focus-flash {
+  0%, 30% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--fg) 55%, transparent); }
+  100% { box-shadow: 0 0 0 3px transparent; }
+}
 .logo-rest {
   transform: rotate(0deg);
   transition: transform 0.4s ease-out;
