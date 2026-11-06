@@ -2,6 +2,7 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import type { PushSubscription } from "web-push";
 import { browse } from "./browse";
+import { channel3Enabled, lookupPrice } from "./channel3";
 import { captureAuthorization, createAndAuthorizeWithVault, voidAuthorization } from "./paypal";
 import { sendPush } from "./push";
 import { prepareOffer } from "./sign";
@@ -161,6 +162,15 @@ async function currentPrice(r: WatchRecord): Promise<number | null> {
     return p;
   }
   if (!r.url) return null;
+  // US products: Channel3 returns the live price even for sites that block scrapers.
+  if (channel3Enabled() && r.currency.toUpperCase() === "USD") {
+    try {
+      const hit = await lookupPrice(r.url);
+      if (hit && hit.currency.toUpperCase() === "USD") return hit.price;
+    } catch {
+      /* fall back to browsing */
+    }
+  }
   const page = await browse(r.url);
   const p = page.product.price;
   if (p == null || !(p > 0)) return null;

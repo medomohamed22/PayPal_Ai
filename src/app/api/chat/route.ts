@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { runAgent } from "@/lib/server/agent";
 import { runDemo } from "@/lib/server/demo";
+import { hostedConfig, hostedEnabled, takeHostedQuota } from "@/lib/server/hosted";
 import type { AgentEvent } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -51,7 +52,9 @@ export async function POST(req: Request) {
         }
       };
       try {
-        if (settings.demoMode || !apiKey) {
+        const useHosted = !settings.demoMode && !apiKey && hostedEnabled();
+        if (useHosted) await takeHostedQuota(req);
+        if (settings.demoMode || (!apiKey && !useHosted)) {
           if (!settings.demoMode) throw new Error("NO_API_KEY");
           await runDemo({
             text: last.text,
@@ -64,12 +67,14 @@ export async function POST(req: Request) {
           });
         } else {
           await runAgent({
-            cfg: {
-              baseUrl: settings.baseUrl,
-              apiKey,
-              model: settings.model,
-              reasoningEffort: settings.reasoningEffort,
-            },
+            cfg: useHosted
+              ? hostedConfig(settings.reasoningEffort)
+              : {
+                  baseUrl: settings.baseUrl,
+                  apiKey,
+                  model: settings.model,
+                  reasoningEffort: settings.reasoningEffort,
+                },
             history,
             market: settings.market,
             city: settings.city,

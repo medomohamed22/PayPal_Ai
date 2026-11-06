@@ -23,6 +23,7 @@ import {
   RotateCcw,
   Lock,
   BellPlus,
+  PackageSearch,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatMoney, type Strings } from "@/lib/i18n";
@@ -113,6 +114,7 @@ export function LinkCard({ preview, lang }: { preview: LinkPreview; lang: Lang }
 
 const STEP_ICON: Record<string, typeof Search> = {
   web_search: Search,
+  catalog_search: PackageSearch,
   browse_url: Globe,
   show_offers: Scale,
   request_purchase_approval: ShieldCheck,
@@ -123,6 +125,7 @@ const STEP_ICON: Record<string, typeof Search> = {
 export function stepLabel(tool: string, s: Strings, lang: Lang): string {
   const ar: Record<string, string> = {
     web_search: "بيبحث في الويب",
+    catalog_search: "بيدوّر في كتالوج ١٠٠ مليون منتج",
     browse_url: "بيتصفح",
     show_offers: "بيقارن ويرتّب العروض",
     request_purchase_approval: "بيجهّز طلب الموافقة",
@@ -131,6 +134,7 @@ export function stepLabel(tool: string, s: Strings, lang: Lang): string {
   };
   const en: Record<string, string> = {
     web_search: "Searching the web",
+    catalog_search: "Searching a 100M-product catalog",
     browse_url: "Browsing",
     show_offers: "Comparing & ranking offers",
     request_purchase_approval: "Preparing approval",
@@ -246,7 +250,7 @@ export function StepsTimeline({
   const browsed = steps.filter((x) => x.tool === "browse_url" && x.detail);
   const found = Array.from(new Set(steps.flatMap((x) => x.hosts ?? [])));
   const allHosts = Array.from(new Set([...browsed.map((x) => x.detail!), ...found]));
-  const searches = steps.filter((x) => x.tool === "web_search").length;
+  const searches = steps.filter((x) => x.tool === "web_search" || x.tool === "catalog_search").length;
   const sites = new Set(browsed.map((b) => b.detail)).size;
   const n = (v: number) => v.toLocaleString(ar ? "ar-EG-u-nu-latn" : "en-US");
   const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;

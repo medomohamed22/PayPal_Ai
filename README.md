@@ -17,6 +17,8 @@ Shopping agents (Grok, ChatGPT, Perplexity, Google, Amazon) race to "buy faster"
 | 📍 Local & bilingual | City + GPS aware (pickup distance vs delivery), Arabic (RTL) + English |
 | 🔔 Price watches | Notify-then-approve, or **auto-buy** with a vaulted PayPal wallet (Vault v3) and the same 10-minute hold |
 | 📦 After the purchase | Tracking added to the PayPal order (Orders `/track`); one-tap refund for order problems |
+| ⚡ Channel3 catalog (US) | `catalog_search` tool: structured prices, images and ratings across 100M+ products in ~1s, plus **visual search** from the user's photo; also powers live price checks for US watches (`/v1/lookup`) |
+| 🧑‍⚖️ No key needed | Visitors without a Meta key use a server-held key, rate-limited per visitor and globally |
 
 ## PayPal APIs used
 - **OAuth 2.0** client credentials
@@ -62,12 +64,17 @@ Open **Settings** → paste your Meta Model API key (stored only in your browser
 | Upstash Redis | for watches | **Storage → Upstash → Redis** (adds `KV_REST_API_URL` / `KV_REST_API_TOKEN`) |
 | `CRON_SECRET` | for watches | any random string |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | for push | `npx web-push generate-vapid-keys` |
+| `CHANNEL3_API_KEY` | recommended | free key at trychannel3.com → Dashboard → API (US catalog + visual search) |
+| `META_API_KEY` | recommended | server-held Meta key so visitors can try the real agent without their own |
+| `HOSTED_DAILY_LIMIT` / `HOSTED_GLOBAL_DAILY_LIMIT` | | requests per visitor / in total per day (defaults `20` / `500`) |
+| `HOSTED_MODEL` | | model for hosted requests (default `muse-spark-1.3-contributor`) |
 
 3. Redeploy and check `GET /api/paypal/status` → `{"configured": true, "env": "sandbox"}`.
-4. Vercel Hobby runs the cron once a day. For checks every 15 minutes, create a free job at cron-job.org → `GET https://<your-app>/api/cron` with header `Authorization: Bearer <CRON_SECRET>`. While the app is open it also checks watches every 30 s.
+4. Vercel Hobby runs the cron once a day, so `.github/workflows/price-watch.yml` (GitHub Actions) calls `/api/cron` **every 10 minutes**. Add a repository secret `CRON_SECRET` (same value as in Vercel); optionally a repository variable `APP_URL`. While the app is open it also checks watches every 30 s.
 
 ## Testing as a judge
-1. Open the app → **Settings** → enable **Demo mode** (or add a Meta Model API key).
+1. Open the app and just type — the real agent runs on a hosted key (limited per day). Or add your own Meta Model API key in **Settings**, or enable **Demo mode** for a scripted run.
+   - For the Channel3 catalog and visual search, switch **Settings → Market** to **United States** and send a product name or photo.
 2. Ask: `buy airpods pro 3` → **Approve with PayPal** → log in with a PayPal **sandbox personal** account → you get the 10-minute hold → **Cancel** or **Confirm now** → **Track order** / **Problem with order?**
 3. Ask: `watch airpods pro 3 and tell me if it drops under 11500` → **Set up** → open 🔔 → **Simulate price drop** → **Buy now**.
 
@@ -75,6 +82,9 @@ Open **Settings** → paste your Meta Model API key (stored only in your browser
 - **Next.js 15 (App Router) on Vercel**, Tailwind v4, Framer Motion, Dexie (IndexedDB)
 - `src/app/api/chat` — streams NDJSON agent events (activity, text, cards)
 - `src/lib/server/agent.ts` — tool-calling loop over the Meta Model API (OpenAI-compatible); tools run in parallel
+- `src/lib/server/channel3.ts` — Channel3 product catalog (search, visual search, price lookup)
+- `src/lib/server/hosted.ts` — server-held model key with per-visitor/global daily limits
+- `.github/workflows/price-watch.yml` — 10-minute price checks via GitHub Actions
 - `src/lib/server/browse.ts` — SSRF-safe page fetcher (JSON-LD / OpenGraph); page text treated as untrusted
 - `src/lib/server/rank.ts` — deterministic ranking & fake-deal detection
 - `src/lib/server/paypal.ts` — PayPal REST client (Orders, Payments, Vault)
@@ -83,7 +93,7 @@ Open **Settings** → paste your Meta Model API key (stored only in your browser
 - Chats, images and settings stay on the device (IndexedDB); only watches live on the server.
 
 ## Security notes
-- The Meta API key is kept in the browser and sent per request; it is never stored or logged on the server.
+- The user's Meta API key is kept in the browser and sent per request; it is never stored or logged on the server. The hosted key always goes to the official Meta endpoint, never to a user-supplied base URL.
 - Web content is data, not instructions (prompt-injection guard in the system prompt + deterministic server checks).
 - Vault payment tokens are stored server-side only, keyed by a hashed device id.
 

@@ -13,6 +13,8 @@ interface KV {
   sadd(key: string, member: string): Promise<void>;
   srem(key: string, member: string): Promise<void>;
   smembers(key: string): Promise<string[]>;
+  /** Atomic counter that expires ttlSec after its first increment. */
+  incr(key: string, ttlSec: number): Promise<number>;
 }
 
 const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
@@ -37,6 +39,11 @@ function redisKV(): KV {
       await r.srem(k, m);
     },
     smembers: async (k) => (await r.smembers(k)) as string[],
+    incr: async (k, ttl) => {
+      const n = await r.incr(k);
+      if (n === 1) await r.expire(k, ttl);
+      return n;
+    },
   };
 }
 
@@ -57,6 +64,11 @@ function memoryKV(): KV {
       m.set(k, ((m.get(k) as string[]) ?? []).filter((x) => x !== v));
     },
     smembers: async (k) => [...((m.get(k) as string[]) ?? [])],
+    incr: async (k) => {
+      const n = ((m.get(k) as number) ?? 0) + 1;
+      m.set(k, n);
+      return n;
+    },
   };
 }
 

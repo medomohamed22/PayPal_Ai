@@ -5,8 +5,8 @@ export const maxDuration = 300;
 
 /**
  * Checks every price watch. Vercel Cron (daily on Hobby) calls this with
- * `Authorization: Bearer $CRON_SECRET`; for faster checks, point a free external
- * cron (e.g. cron-job.org, every 10–15 min) at this URL with the same header.
+ * `Authorization: Bearer $CRON_SECRET`; .github/workflows/price-watch.yml calls it
+ * every 10 minutes from GitHub Actions with the same header.
  */
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET;

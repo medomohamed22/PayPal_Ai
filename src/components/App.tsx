@@ -130,6 +130,8 @@ export default function App() {
   const [watchesOpen, setWatchesOpen] = useState(false);
   const [watchDraft, setWatchDraft] = useState<{ offer: Offer; targetPrice?: number; mode?: WatchMode } | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  /** Server-provided AI key for visitors without their own (rate-limited). */
+  const [hosted, setHosted] = useState(false);
   const prevStatus = useRef<Map<string, Watch["status"]>>(new Map());
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -142,6 +144,10 @@ export default function App() {
       setReady(true);
     });
     requestPersistence();
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then((c: { hostedAI?: boolean }) => setHosted(!!c.hostedAI))
+      .catch(() => {});
     setDark(document.documentElement.classList.contains("dark"));
   }, []);
 
@@ -208,7 +214,7 @@ export default function App() {
   const send = useCallback(
     async (p: ComposerPayload) => {
       if (busy) return;
-      if (!settings.apiKey && !settings.demoMode) {
+      if (!settings.apiKey && !settings.demoMode && !hosted) {
         setSettingsOpen(true);
         return;
       }
@@ -280,6 +286,7 @@ export default function App() {
               continue;
             }
             if (ev.type === "error" && ev.message === "NO_API_KEY") ev = { ...ev, message: s.needKey };
+            if (ev.type === "error" && ev.message === "HOSTED_LIMIT") ev = { ...ev, message: s.hostedLimit };
             assistant = { ...assistant, blocks: applyEvent(assistant.blocks, ev) };
             setLive(assistant);
             persist();
@@ -306,7 +313,7 @@ export default function App() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [busy, settings, convId, s],
+    [busy, settings, convId, s, hosted],
   );
 
   /** Clicking "Buy" on a product card opens an approval box directly (no LLM round-trip). */
@@ -788,7 +795,7 @@ export default function App() {
           <Settings2 className="size-4" />
           {s.settings}
           <span className="ms-auto truncate font-mono text-[10px] text-fg-muted" dir="ltr">
-            {settings.demoMode ? "demo" : settings.model}
+            {settings.demoMode ? "demo" : !settings.apiKey && hosted ? "hosted" : settings.model}
           </span>
         </button>
       </div>
@@ -898,7 +905,7 @@ export default function App() {
               <EmptyState
                 s={s}
                 ready={ready}
-                needsKey={!settings.apiKey && !settings.demoMode}
+                needsKey={!settings.apiKey && !settings.demoMode && !hosted}
                 onPick={(text) => setPrefill({ text, n: Date.now() })}
                 onSettings={() => setSettingsOpen(true)}
               />

@@ -1,5 +1,6 @@
 import "server-only";
 import { browse } from "./browse";
+import { catalogSearch, channel3Enabled } from "./channel3";
 import { streamChat, webSearch, type ChatMsg, type FunctionTool, type MetaConfig } from "./meta";
 import { rankOffers, type RawOffer } from "./rank";
 import { prepareOffer, prepareOffers } from "./sign";
@@ -24,6 +25,23 @@ const OFFER_SCHEMA = {
     notes: { type: "string", description: "One short factual line, e.g. 'In stock, official warranty'" },
   },
   required: ["title", "store", "price", "currency"],
+};
+
+const CATALOG_TOOL: FunctionTool = {
+  type: "function",
+  function: {
+    name: "catalog_search",
+    description:
+      "Instant structured search over 100M+ US products (Channel3): exact prices, merchant URLs, images and ratings, no page browsing needed. Use it FIRST in the US market. Set use_photo=true to search by the photo the user sent (visual search). Results are real offers you can pass straight to show_offers.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Product name/model, e.g. 'Sony WH-1000XM5 headphones'" },
+        use_photo: { type: "boolean", description: "Search by the user's latest photo (optionally combined with query)" },
+        max_price: { type: "number", description: "Optional max price in USD" },
+      },
+    },
+  },
 };
 
 export const TOOLS: FunctionTool[] = [
@@ -102,7 +120,7 @@ export const TOOLS: FunctionTool[] = [
   },
 ];
 
-function developerPrompt(market: Market, city: string, lang: Lang, coords?: { lat: number; lon: number }): string {
+function developerPrompt(market: Market, city: string, lang: Lang, coords?: { lat: number; lon: number }, catalog = false): string {
   const currency = market === "EG" ? "EGP" : "USD";
   const country = market === "EG" ? "Egypt" : "United States";
   return `You are Dalil, a trustworthy AI shopping agent built on PayPal.
@@ -112,7 +130,7 @@ Reply in ${lang === "ar" ? "Egyptian Arabic" : "English"} unless the user writes
 How to work:
 1. Identify the exact product. If the user sent a photo, identify brand/model/variant from it. If they sent a link, browse it first.
 2. Be fast but thorough. Start with ONE web_search call carrying 2-3 different queries (official store, big marketplaces, local shops in ${city}). Search results often already contain prices — use them. Browse only pages whose price/image is missing, several in ONE turn (they run in parallel). If a page is blocked or errors, do NOT retry it — rely on search-result prices. You may search again with new angles if results are thin. Prefer official and well-known retailers in ${country}. Compare the TOTAL cost (price + shipping). Include nearby physical stores with distance when known. Each tool result ends with the time left; when it is under 15s, finish.
-3. Call show_offers as soon as you have 2+ real offers — the user sees them immediately — and call it again later with a better/larger list if you keep searching (it replaces the cards). 2-8 real offers. Never invent URLs, prices, ratings or stores — only use facts from tool results. If a fact is unknown, omit it.
+${catalog ? "   US catalog: in your FIRST turn call catalog_search (instant prices, images, ratings across major US retailers; use_photo=true when the user sent a photo) together with web_search for anything the catalog may miss. Catalog offers are verified data — prefer them over browsing.\n" : ""}3. Call show_offers as soon as you have 2+ real offers — the user sees them immediately — and call it again later with a better/larger list if you keep searching (it replaces the cards). 2-8 real offers. Never invent URLs, prices, ratings or stores — only use facts from tool results. If a fact is unknown, omit it.
 4. After show_offers, write 1-3 short sentences: the recommendation and why (using the returned ranking and any flags such as suspicious_discount or price_far_below_market).
 5. Only call request_purchase_approval when the user clearly wants to buy a specific offer. You can never pay any other way.
 6. If the user wants to wait for a better price ("watch", "tell me when it drops", "buy if under X"), find the product first, then call propose_watch with the best offer, the target price and mode ("auto" only if they asked to buy automatically).
@@ -167,8 +185,11 @@ export async function runAgent(opts: RunOptions): Promise<void> {
   const started = Date.now();
   const pages = new Map<string, { image?: string; rating?: number; reviewCount?: number }>();
   const state = { offersShown: false };
+  const catalog = market === "US" && channel3Enabled();
+  const tools = catalog ? [CATALOG_TOOL, ...TOOLS] : TOOLS;
+  const photo = [...opts.history].reverse().find((m) => m.role === "user")?.images?.[0];
   const messages: ChatMsg[] = [
-    { role: "developer", content: developerPrompt(market, city, lang, opts.coords) },
+    { role: "developer", content: developerPrompt(market, city, lang, opts.coords, catalog) },
     ...toChatMessages(opts.history),
   ];
 
@@ -191,7 +212,7 @@ export async function runAgent(opts: RunOptions): Promise<void> {
       choice = "none";
     }
 
-    const gen = streamChat(cfg, messages, TOOLS, signal, choice);
+    const gen = streamChat(cfg, messages, tools, signal, choice);
     let result: { toolCalls: { id: string; name: string; arguments: string }[]; text: string };
     while (true) {
       const n = await gen.next();
@@ -232,11 +253,14 @@ export async function runAgent(opts: RunOptions): Promise<void> {
           step.detail = clip(qs.filter(Boolean).map(String).join(" · "), 90);
         }
         if (call.name === "browse_url") step.detail = hostOf(String(args.url ?? ""));
+        if (call.name === "catalog_search") step.detail = clip(String(args.query ?? (args.use_photo ? "📷" : "")), 90);
         emit({ type: "step", step });
         try {
-          const output = await execTool(call.name, args, { cfg, market, emit, signal, pages, state });
+          const output = await execTool(call.name, args, { cfg, market, emit, signal, pages, state, photo });
           const hosts =
-            call.name === "web_search" && Array.isArray(output)
+            call.name === "catalog_search" && Array.isArray(output)
+              ? Array.from(new Set((output as Array<{ store: string }>).map((o) => o.store))).slice(0, 8)
+              : call.name === "web_search" && Array.isArray(output)
               ? Array.from(
                   new Set(
                     (output as Array<{ sources?: Array<{ url: string }> }>)
@@ -275,9 +299,19 @@ async function execTool(
     signal?: AbortSignal;
     pages: Map<string, { image?: string; rating?: number; reviewCount?: number }>;
     state: { offersShown: boolean };
+    photo?: string;
   },
 ): Promise<unknown> {
   switch (name) {
+    case "catalog_search": {
+      const query = String(args.query ?? "").trim() || undefined;
+      const b64 = args.use_photo && ctx.photo?.startsWith("data:") ? ctx.photo.slice(ctx.photo.indexOf(",") + 1) : undefined;
+      if (!query && !b64) throw new Error("query or photo required");
+      const items = await catalogSearch({ query, base64Image: b64, maxPrice: Number(args.max_price) || undefined }, ctx.signal);
+      for (const it of items) if (it.url) ctx.pages.set(it.url, { image: it.image, rating: it.rating, reviewCount: it.reviewCount });
+      if (!items.length) return { results: [], hint: "No catalog match — use web_search." };
+      return items.slice(0, 12).map(({ productId: _id, ...o }) => o);
+    }
     case "web_search": {
       const qs = (Array.isArray(args.queries) ? args.queries : [args.query])
         .map((q) => String(q ?? "").trim())
