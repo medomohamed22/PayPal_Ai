@@ -27,6 +27,14 @@ export class PayPalError extends Error {
   }
 }
 
+/** PayPal resource ids are short alphanumerics. Anything else (e.g. "../") must never reach a URL path. */
+function pid(id: unknown): string {
+  const v = String(id ?? "");
+  if (!/^[A-Za-z0-9-]{6,40}$/.test(v)) throw new PayPalError("Invalid PayPal id", 400, "INVALID_ID");
+  return v;
+}
+
+
 export function paypalConfigured(): boolean {
   return !!(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET);
 }
@@ -294,7 +302,7 @@ function toAuthorized(o: OrderJson): Authorized {
 export async function authorizeOrder(orderId: string): Promise<Authorized> {
   if (!/^[A-Z0-9]{10,25}$/.test(orderId)) throw new PayPalError("Invalid order id", 400, "INVALID_ORDER_ID");
   try {
-    const o = await pp<OrderJson>(`/v2/checkout/orders/${orderId}/authorize`, {
+    const o = await pp<OrderJson>(`/v2/checkout/orders/${pid(orderId)}/authorize`, {
       method: "POST",
       body: {},
       requestId: `dalil-auth-${orderId}`,
@@ -303,7 +311,7 @@ export async function authorizeOrder(orderId: string): Promise<Authorized> {
   } catch (e) {
     // Idempotency: if it was already authorized, return the existing hold.
     if (e instanceof PayPalError && e.code === "ORDER_ALREADY_AUTHORIZED") {
-      return toAuthorized(await pp<OrderJson>(`/v2/checkout/orders/${orderId}`));
+      return toAuthorized(await pp<OrderJson>(`/v2/checkout/orders/${pid(orderId)}`));
     }
     throw e;
   }
@@ -353,7 +361,7 @@ export async function createAndAuthorizeWithVault(
 
 export async function captureAuthorization(authorizationId: string): Promise<{ id: string; status: string }> {
   if (!/^[A-Z0-9]{10,25}$/.test(authorizationId)) throw new PayPalError("Invalid authorization id", 400);
-  const r = await pp<{ id: string; status: string }>(`/v2/payments/authorizations/${authorizationId}/capture`, {
+  const r = await pp<{ id: string; status: string }>(`/v2/payments/authorizations/${pid(authorizationId)}/capture`, {
     method: "POST",
     body: { final_capture: true },
     requestId: `dalil-cap-${authorizationId}`,
@@ -363,13 +371,13 @@ export async function captureAuthorization(authorizationId: string): Promise<{ i
 
 export async function voidAuthorization(authorizationId: string): Promise<{ status: string }> {
   if (!/^[A-Z0-9]{10,25}$/.test(authorizationId)) throw new PayPalError("Invalid authorization id", 400);
-  await pp(`/v2/payments/authorizations/${authorizationId}/void`, { method: "POST" });
-  const a = await pp<{ status: string }>(`/v2/payments/authorizations/${authorizationId}`);
+  await pp(`/v2/payments/authorizations/${pid(authorizationId)}/void`, { method: "POST" });
+  const a = await pp<{ status: string }>(`/v2/payments/authorizations/${pid(authorizationId)}`);
   return { status: a.status };
 }
 
 export async function getAuthorization(authorizationId: string): Promise<{ status: string; expiresAt?: string }> {
-  const a = await pp<{ status: string; expiration_time?: string }>(`/v2/payments/authorizations/${authorizationId}`);
+  const a = await pp<{ status: string; expiration_time?: string }>(`/v2/payments/authorizations/${pid(authorizationId)}`);
   return { status: a.status, expiresAt: a.expiration_time };
 }
 
@@ -424,7 +432,7 @@ export async function addTracking(orderId: string, captureId: string, carrierNam
     throw new PayPalError("Invalid order or capture id", 400);
   }
   const trackingNumber = `DL${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-  await pp(`/v2/checkout/orders/${orderId}/track`, {
+  await pp(`/v2/checkout/orders/${pid(orderId)}/track`, {
     method: "POST",
     requestId: `dalil-track-${captureId}`,
     body: {
@@ -441,7 +449,7 @@ export async function addTracking(orderId: string, captureId: string, carrierNam
 export async function refundCapture(captureId: string, note: string): Promise<{ id: string; status: string; amount?: string; currency?: string }> {
   if (!/^[A-Z0-9]{10,25}$/.test(captureId)) throw new PayPalError("Invalid capture id", 400);
   const r = await pp<{ id: string; status: string; amount?: { value: string; currency_code: string } }>(
-    `/v2/payments/captures/${captureId}/refund`,
+    `/v2/payments/captures/${pid(captureId)}/refund`,
     { method: "POST", requestId: `dalil-refund-${captureId}`, body: { note_to_payer: note.slice(0, 255) } },
   );
   return { id: r.id, status: r.status, amount: r.amount?.value, currency: r.amount?.currency_code };

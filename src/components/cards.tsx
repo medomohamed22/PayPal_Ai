@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatMoney, type Strings } from "@/lib/i18n";
+import PayLaterMessage from "./PayLater";
 import type { ApprovalStatus, Block, Lang, LinkPreview, Offer, Step } from "@/lib/types";
 
 /* ---------- Image with graceful fallback ---------- */
@@ -1046,6 +1047,11 @@ export function ApprovalCard({
         <AnimatePresence mode="wait">
           {status === "pending" ? (
             <motion.div key="actions" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2">
+              <PayLaterMessage
+                amount={offer.chargeAmount ?? offer.total}
+                currency={offer.chargeCurrency ?? offer.currency}
+                lang={lang}
+              />
               <motion.button
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.97 }}
