@@ -107,7 +107,9 @@ function applyEvent(blocks: Block[], e: AgentEvent): Block[] {
     // Progressive results: a newer offer list replaces the previous cards in place.
     // The live browser view updates in place, too.
     const at =
-      e.block.type === "products" || e.block.type === "browser" ? next.findIndex((b) => b.type === e.block.type) : -1;
+      e.block.type === "products" || e.block.type === "browser" || e.block.type === "insight"
+        ? next.findIndex((b) => b.type === e.block.type)
+        : -1;
     if (at >= 0) next[at] = e.block;
     else next.push(e.block);
   } else if (e.type === "browserDone") {

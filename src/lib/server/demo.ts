@@ -3,6 +3,7 @@ import { rankOffers, type RawOffer } from "./rank";
 import { prepareOffers } from "./sign";
 import { formatMoney } from "../i18n";
 import { barcodeIn } from "./barcode";
+import { priceInsight } from "./insight";
 import type { AgentEvent, Lang, Market, Step } from "../types";
 
 /**
@@ -168,6 +169,8 @@ export async function runDemo(opts: {
   emit({ type: "block", block: { type: "products", offers: ranked, note: "demo" } });
 
   const best = ranked.find((o) => o.trust !== "suspicious")!;
+  const insight = await priceInsight({ title: best.title, url: best.url, price: best.price, currency: best.currency, market, demo: true });
+  emit({ type: "block", block: { type: "insight", offer: best, insight } });
   const sus = ranked.find((o) => o.trust === "suspicious" || o.flags.includes("suspicious_discount"));
   const money = formatMoney(best.total, best.currency, lang);
 

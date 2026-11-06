@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 import type { Strings } from "@/lib/i18n";
 import type { Block, ChatMessage, Lang, Offer, WatchMode } from "@/lib/types";
 import { WatchDraftCard } from "./Watches";
+import { InsightCard } from "./Insight";
 import { ApprovalCard, BrowserCard, LinkCard, OfferSkeletons, ProductCards, StepsTimeline } from "./cards";
 import Logo from "./Logo";
 
@@ -131,6 +132,8 @@ export default function MessageView({
               );
             case "link":
               return <LinkCard key={i} preview={b.preview} lang={lang} />;
+            case "insight":
+              return <InsightCard key={i} offer={b.offer} insight={b.insight} lang={lang} onBuy={onBuy} onWatch={onOpenDraft} />;
             case "browser":
               return <BrowserCard key={i} block={b} lang={lang} live={live && b.live !== false} />;
             case "watchDraft":

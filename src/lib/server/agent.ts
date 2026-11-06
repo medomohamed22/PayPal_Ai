@@ -1,6 +1,7 @@
 import "server-only";
 import { browse } from "./browse";
 import { lookupBarcode } from "./barcode";
+import { priceInsight, recordPrices } from "./insight";
 import { BrowserSession, browserAvailable, type PageState } from "./browser";
 import { catalogSearch, channel3Enabled } from "./channel3";
 import { streamChat, webSearch, type ChatMsg, type FunctionTool, type MetaConfig } from "./meta";
@@ -224,7 +225,7 @@ const TIME_BUDGET_MS = Number(process.env.DALIL_TIME_BUDGET_MS) || 75_000;
 export async function runAgent(opts: RunOptions): Promise<void> {
   const { cfg, market, city, lang, emit, signal } = opts;
   const started = Date.now();
-  const pages = new Map<string, { image?: string; rating?: number; reviewCount?: number }>();
+  const pages = new Map<string, { image?: string; rating?: number; reviewCount?: number; productId?: string }>();
   const state = { offersShown: false };
   const catalog = market === "US" && channel3Enabled();
   const tools = [...(catalog ? [CATALOG_TOOL] : []), ...TOOLS, ...(browserAvailable() ? BROWSER_TOOLS : [])];
@@ -354,7 +355,7 @@ async function execTool(
     market: Market;
     emit: (e: AgentEvent) => void;
     signal?: AbortSignal;
-    pages: Map<string, { image?: string; rating?: number; reviewCount?: number }>;
+    pages: Map<string, { image?: string; rating?: number; reviewCount?: number; productId?: string }>;
     state: { offersShown: boolean };
     photo?: string;
     browser?: BrowserSession;
@@ -399,7 +400,8 @@ async function execTool(
       const b64 = args.use_photo && ctx.photo?.startsWith("data:") ? ctx.photo.slice(ctx.photo.indexOf(",") + 1) : undefined;
       if (!query && !b64) throw new Error("query or photo required");
       const items = await catalogSearch({ query, base64Image: b64, maxPrice: Number(args.max_price) || undefined }, ctx.signal);
-      for (const it of items) if (it.url) ctx.pages.set(it.url, { image: it.image, rating: it.rating, reviewCount: it.reviewCount });
+      for (const it of items)
+        if (it.url) ctx.pages.set(it.url, { image: it.image, rating: it.rating, reviewCount: it.reviewCount, productId: it.productId });
       if (!items.length) return { results: [], hint: "No catalog match — use web_search." };
       return items.slice(0, 12).map(({ productId: _id, ...o }) => o);
     }
@@ -438,8 +440,30 @@ async function execTool(
       if (!ranked.length) throw new Error("no valid offers");
       ctx.state.offersShown = true;
       ctx.emit({ type: "block", block: { type: "products", offers: ranked } });
+      void recordPrices(ranked);
+      // "Buy now or wait?" for the best non-suspicious offer.
+      const top = ranked.find((o) => o.trust !== "suspicious");
+      let advice: unknown;
+      if (top) {
+        try {
+          const insight = await priceInsight({
+            title: top.title,
+            url: top.url,
+            price: top.price,
+            currency: top.currency,
+            market: ctx.market,
+            productId: top.url ? ctx.pages.get(top.url)?.productId : undefined,
+            signal: ctx.signal,
+          });
+          ctx.emit({ type: "block", block: { type: "insight", offer: top, insight } });
+          advice = { verdict: insight.verdict, reason: insight.reason, targetPrice: insight.targetPrice, next_sale: insight.event && `${insight.event.en} in ${insight.event.daysAway} days` };
+        } catch {
+          /* advice is optional */
+        }
+      }
       return {
         shown: ranked.length,
+        buy_or_wait: advice,
         ranking: ranked.map((o, i) => ({
           rank: i + 1,
           title: o.title,

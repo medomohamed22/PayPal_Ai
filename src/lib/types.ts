@@ -88,6 +88,8 @@ export type Block =
     }
   | { type: "watchDraft"; offer: Offer; targetPrice?: number; mode?: WatchMode }
   | { type: "error"; text: string }
+  /** "Buy now or wait?" advice for the top offer. */
+  | { type: "insight"; offer: Offer; insight: PriceInsight }
   /** Live view of the agent's real browser (latest screenshot). */
   | { type: "browser"; url: string; title?: string; shot?: string; action?: string; pages?: number; live?: boolean };
 
@@ -216,4 +218,19 @@ export interface Watch {
   hold?: WatchHold;
   captureId?: string;
   message?: string;
+}
+
+export interface PriceInsight {
+  verdict: "buy" | "wait";
+  reason: "near_lowest" | "sale_soon" | "above_average" | "fair_price" | "no_history";
+  confidence: "high" | "medium" | "low";
+  price: number;
+  currency: string;
+  /** Suggested watch target when waiting. */
+  targetPrice?: number;
+  stats: { min: number; max: number; mean: number; points: number; days: number };
+  history: Array<{ t: number; p: number }>;
+  event?: { id: string; en: string; ar: string; date: string; daysAway: number; drop: number };
+  /** channel3 = catalog history · dalil = prices Dalil recorded · sample = demo data · none = no history yet */
+  source: "channel3" | "dalil" | "sample" | "none";
 }
