@@ -6,7 +6,7 @@ import net from "node:net";
  * SSRF guard: the agent and the user can hand us arbitrary URLs (product links,
  * custom API base URLs). Only allow public http(s) hosts.
  */
-function isPrivateIp(ip: string): boolean {
+export function isPrivateIp(ip: string): boolean {
   if (net.isIPv4(ip)) {
     const [a, b] = ip.split(".").map(Number);
     return (

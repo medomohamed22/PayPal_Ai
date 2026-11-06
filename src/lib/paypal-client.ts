@@ -23,6 +23,7 @@ export interface HoldRecord {
   msgId: string;
   idx: number;
   authorizationId: string;
+  holdToken?: string;
   captureAt: number;
 }
 
@@ -78,15 +79,16 @@ export function authorize(orderId: string) {
     shipping: { name?: string; address?: string };
     payerEmail?: string;
     vaultId?: string;
+    holdToken: string;
   }>("/api/paypal/authorize", { orderId });
 }
 
-export function capture(authorizationId: string) {
-  return post<{ id: string; status: string }>("/api/paypal/capture", { authorizationId });
+export function capture(authorizationId: string, holdToken?: string) {
+  return post<{ id: string; status: string; captureToken: string }>("/api/paypal/capture", { authorizationId, holdToken });
 }
 
-export function voidHold(authorizationId: string) {
-  return post<{ status: string }>("/api/paypal/void", { authorizationId });
+export function voidHold(authorizationId: string, holdToken?: string) {
+  return post<{ status: string }>("/api/paypal/void", { authorizationId, holdToken });
 }
 
 export function readResult(): PayPalResult | null {

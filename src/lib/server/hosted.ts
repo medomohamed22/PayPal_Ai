@@ -32,7 +32,12 @@ export function hostedConfig(reasoningEffort?: string): MetaConfig {
 }
 
 export function visitorId(req: Request): string {
-  const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || req.headers.get("x-real-ip") || "unknown";
+  const h = req.headers;
+  const ip =
+    h.get("x-vercel-forwarded-for")?.split(",")[0].trim() ||
+    h.get("x-real-ip") ||
+    (h.get("x-forwarded-for") ?? "").split(",").pop()?.trim() ||
+    "unknown";
   return createHash("sha256").update(`dalil:${ip}`).digest("hex").slice(0, 24);
 }
 

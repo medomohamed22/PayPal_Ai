@@ -1,6 +1,8 @@
 import "server-only";
 import type { Browser, Page } from "puppeteer-core";
-import { assertPublicUrl } from "./net";
+import { lookup } from "node:dns/promises";
+import net from "node:net";
+import { assertPublicUrl, isPrivateIp } from "./net";
 
 /**
  * Real headless Chromium for the agent ("browser_open" / "browser_action").
@@ -69,6 +71,21 @@ export interface PageState {
   shot?: string;
 }
 
+/** Does this host resolve to a private/internal address? (cached per session) */
+const hostVerdicts = new Map<string, Promise<boolean>>();
+function hostIsPrivate(host: string): Promise<boolean> {
+  const h = host.replace(/^\[|\]$/g, "").toLowerCase();
+  let v = hostVerdicts.get(h);
+  if (!v) {
+    v = (net.isIP(h) ? Promise.resolve([{ address: h }]) : lookup(h, { all: true }))
+      .then((addrs) => addrs.length === 0 || addrs.some((a) => isPrivateIp(a.address)))
+      .catch(() => true);
+    hostVerdicts.set(h, v);
+    if (hostVerdicts.size > 500) hostVerdicts.delete(hostVerdicts.keys().next().value!);
+  }
+  return v;
+}
+
 /** Local tests only: one exact host:port allowed past the SSRF guard (never on Vercel). */
 const TEST_HOST = !process.env.VERCEL ? process.env.DALIL_TEST_BROWSER_HOST : undefined;
 const isTestHost = (u: string) => {
@@ -95,7 +112,7 @@ export class BrowserSession {
       Object.defineProperty(navigator, "webdriver", { get: () => undefined });
     });
     await page.setRequestInterception(true);
-    page.on("request", (req) => {
+    page.on("request", async (req) => {
       let host = "";
       try {
         const u = new URL(req.url());
@@ -106,7 +123,9 @@ export class BrowserSession {
         return void req.abort();
       }
       // Block internal hosts and heavy media (faster, cheaper).
-      if (PRIVATE_HOST.test(host) && !isTestHost(req.url())) return void req.abort();
+      if (isTestHost(req.url())) return void req.continue();
+      // Pattern check first (fast), then real DNS: blocks names like 127.0.0.1.nip.io.
+      if (PRIVATE_HOST.test(host) || (await hostIsPrivate(host))) return void req.abort("blockedbyclient");
       const type = req.resourceType();
       if (type === "media" || type === "font") return void req.abort();
       void req.continue();

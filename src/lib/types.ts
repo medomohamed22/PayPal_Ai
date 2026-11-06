@@ -78,6 +78,9 @@ export type Block =
       status: ApprovalStatus;
       orderId?: string;
       authorizationId?: string;
+      /** Proof (from the server) that this browser placed the hold / made the capture. */
+      holdToken?: string;
+      captureToken?: string;
       holdExpiresAt?: number;
       message?: string;
       shipping?: { name?: string; address?: string };
@@ -144,7 +147,7 @@ export const DEFAULT_SETTINGS: Settings = {
   reasoningEffort: "low",
   market: "EG",
   city: "Cairo",
-  lang: "ar",
+  lang: "en",
   demoMode: false,
   maxSpend: 0,
   verifiedOnly: true,

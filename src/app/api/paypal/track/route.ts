@@ -1,5 +1,6 @@
 import { addTracking } from "@/lib/server/paypal";
 import { errorResponse } from "@/lib/server/http";
+import { checkCaptureToken } from "@/lib/server/sign";
 
 export const runtime = "nodejs";
 
@@ -9,8 +10,10 @@ export const runtime = "nodejs";
  */
 export async function POST(req: Request) {
   try {
-    const { orderId, captureId, store } = (await req.json()) as { orderId?: string; captureId?: string; store?: string };
-    return Response.json(await addTracking(String(orderId ?? ""), String(captureId ?? ""), `${store ?? "Dalil"} Delivery`));
+    const { captureId, captureToken, store } = (await req.json()) as { captureId?: string; captureToken?: string; store?: string };
+    const id = String(captureId ?? "");
+    const { orderId } = checkCaptureToken(captureToken, id);
+    return Response.json(await addTracking(orderId, id, `${String(store ?? "Dalil").slice(0, 60)} Delivery`));
   } catch (err) {
     return errorResponse(err);
   }

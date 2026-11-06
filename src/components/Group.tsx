@@ -241,7 +241,7 @@ function GroupStatusLine({ g, lang }: { g: GroupView; lang: Lang }) {
 /* ---------------- Public group page (/g/[id]) ---------------- */
 
 export function GroupPage({ id }: { id: string }) {
-  const [lang, setLang] = useState<Lang>("ar");
+  const [lang, setLang] = useState<Lang>("en");
   const ar = lang === "ar";
   const { group: g, setGroup, error } = useGroup(id);
   const [name, setName] = useState("");
@@ -250,8 +250,18 @@ export function GroupPage({ id }: { id: string }) {
   const pending = useRef<string | null>(null);
 
   useEffect(() => {
+    try {
+      if (localStorage.getItem("dalil-lang") === "ar") setLang("ar");
+    } catch {}
     import("@/lib/db").then(({ loadSettings }) => loadSettings().then((s) => setLang(s.lang)).catch(() => {}));
   }, []);
+  const switchLang = (l: Lang) => {
+    setLang(l);
+    try {
+      localStorage.setItem("dalil-lang", l);
+    } catch {}
+    import("@/lib/db").then(({ loadSettings, saveSettings }) => loadSettings().then((s) => saveSettings({ ...s, lang: l }))).catch(() => {});
+  };
   useEffect(() => {
     document.documentElement.lang = lang;
     document.documentElement.dir = ar ? "rtl" : "ltr";
@@ -320,7 +330,7 @@ export function GroupPage({ id }: { id: string }) {
         <Logo size={30} />
         <span className="text-[15px] font-semibold">{ar ? "دليل" : "Dalil"}</span>
         <span className="text-[13px] text-fg-muted">· {ar ? "شراء جماعي" : "Group buy"}</span>
-        <button onClick={() => setLang(ar ? "en" : "ar")} className="ms-auto rounded-full border border-line px-2.5 py-1 text-[11px] font-semibold">
+        <button onClick={() => switchLang(ar ? "en" : "ar")} className="ms-auto rounded-full border border-line px-2.5 py-1 text-[11px] font-semibold">
           {ar ? "EN" : "ع"}
         </button>
       </header>

@@ -1,7 +1,11 @@
 import "server-only";
 import { PayPalError } from "./paypal";
+import { TokenError } from "./sign";
 
 export function errorResponse(err: unknown): Response {
+  if (err instanceof TokenError) {
+    return Response.json({ error: err.message, code: err.code }, { status: err.status });
+  }
   if (err instanceof PayPalError) {
     return Response.json({ error: err.message, code: err.code, debugId: err.debugId }, { status: err.status });
   }

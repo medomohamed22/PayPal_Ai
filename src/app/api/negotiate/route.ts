@@ -25,6 +25,10 @@ export async function POST(req: Request) {
   if (!verifyOffer(offer)) {
     return Response.json({ error: "Offer could not be verified", code: "OFFER_TAMPERED_OR_EXPIRED" }, { status: 400 });
   }
+  // The id is signed, so this can't be stripped: negotiated offers end in "_n<time>".
+  if (offer.flags?.includes("negotiated") || /_n[0-9a-z]+$/.test(offer.id)) {
+    return Response.json({ error: "This price was already negotiated", code: "ALREADY_NEGOTIATED" }, { status: 409 });
+  }
   if (offer.trust === "suspicious") {
     return Response.json({ error: "Not negotiating with a suspicious store", code: "SUSPICIOUS" }, { status: 403 });
   }

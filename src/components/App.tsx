@@ -169,6 +169,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!ready) return; // don't overwrite the saved language with the default before settings load
     document.documentElement.lang = settings.lang;
     document.documentElement.dir = settings.lang === "ar" ? "rtl" : "ltr";
     try {
@@ -614,13 +615,14 @@ export default function App() {
           status: "held",
           orderId: a.orderId,
           authorizationId: a.authorizationId,
+          holdToken: a.holdToken,
           holdExpiresAt: captureAt,
           shipping: a.shipping,
           payerEmail: a.payerEmail,
           message: undefined,
         });
         const holds = (await getKV<HoldRecord[]>("holds")) ?? [];
-        await setKV("holds", [...holds, { msgId, idx, authorizationId: a.authorizationId, captureAt }]);
+        await setKV("holds", [...holds, { msgId, idx, authorizationId: a.authorizationId, holdToken: a.holdToken, captureAt }]);
       } catch (e) {
         await updateBlock(msgId, idx, { status: "error", message: (e as Error).message });
       }
@@ -659,8 +661,8 @@ export default function App() {
         if (!due.length) return;
         for (const h of due) {
           try {
-            const c = await capture(h.authorizationId);
-            await updateBlock(h.msgId, h.idx, { status: "captured", captureId: c.id });
+            const c = await capture(h.authorizationId, h.holdToken);
+            await updateBlock(h.msgId, h.idx, { status: "captured", captureId: c.id, captureToken: c.captureToken });
           } catch (e) {
             await updateBlock(h.msgId, h.idx, { status: "error", message: (e as Error).message });
           }
@@ -717,7 +719,7 @@ export default function App() {
           const r = await fetch("/api/paypal/track", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ orderId: block.orderId, captureId: block.captureId, store: block.offer.store }),
+            body: JSON.stringify({ captureId: block.captureId, captureToken: block.captureToken, store: block.offer.store }),
           });
           const j = await r.json();
           if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
@@ -727,7 +729,7 @@ export default function App() {
           const r = await fetch("/api/paypal/refund", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ captureId: block.captureId, reason }),
+            body: JSON.stringify({ captureId: block.captureId, captureToken: block.captureToken, reason }),
           });
           const j = await r.json();
           if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
@@ -746,11 +748,11 @@ export default function App() {
       try {
         await dropHold(authId);
         if (action === "cancel") {
-          await voidHold(authId);
+          await voidHold(authId, block.holdToken);
           await updateBlock(msgId, idx, { status: "voided" });
         } else {
-          const c = await capture(authId);
-          await updateBlock(msgId, idx, { status: "captured", captureId: c.id });
+          const c = await capture(authId, block.holdToken);
+          await updateBlock(msgId, idx, { status: "captured", captureId: c.id, captureToken: c.captureToken });
         }
       } catch (e) {
         await updateBlock(msgId, idx, { status: "error", message: (e as Error).message });
@@ -980,6 +982,14 @@ export default function App() {
                   className="absolute end-1 top-1 size-2 rounded-full bg-fg"
                 />
               ) : null}
+            </button>
+            <button
+              onClick={() => onSaveSettings({ ...settings, lang: ar ? "en" : "ar" })}
+              className="rounded-lg px-2 py-1.5 text-[12px] font-semibold text-fg-muted hover:bg-bg-soft hover:text-fg"
+              aria-label={ar ? "Switch to English" : "التحويل للعربي"}
+              title={ar ? "English" : "العربية"}
+            >
+              {ar ? "EN" : "ع"}
             </button>
             <button onClick={toggleTheme} className="rounded-lg p-2 text-fg-muted hover:bg-bg-soft hover:text-fg" aria-label="Theme">
               <AnimatePresence mode="wait" initial={false}>

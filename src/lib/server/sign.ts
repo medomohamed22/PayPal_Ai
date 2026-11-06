@@ -22,6 +22,7 @@ function payload(o: Offer, exp: number): string {
   return JSON.stringify([
     o.id, o.title, o.store, o.url ?? "", o.image ?? "", o.price, o.shipping ?? 0,
     o.total, o.currency, o.trust, o.chargeAmount ?? "", o.chargeCurrency ?? "", exp,
+    [...(o.flags ?? [])].sort().join(","),
   ]);
 }
 
@@ -73,5 +74,31 @@ export function verifyToken<T>(token: string | undefined): T | null {
     return exp > Date.now() ? (d as T) : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Capability tokens for money actions. Only whoever placed a hold gets its
+ * holdToken (needed to capture/void it); only whoever captured gets the
+ * captureToken (needed to refund/track). Knowing a PayPal id is not enough.
+ */
+const DAY = 24 * 3600 * 1000;
+export const holdToken = (authorizationId: string, orderId: string) => signToken({ k: "hold", a: authorizationId, o: orderId }, 30 * DAY);
+export const captureToken = (captureId: string, orderId: string) => signToken({ k: "cap", c: captureId, o: orderId }, 180 * DAY);
+
+export function checkHoldToken(token: unknown, authorizationId: string): void {
+  const d = verifyToken<{ k: string; a: string }>(typeof token === "string" ? token : undefined);
+  if (!d || d.k !== "hold" || d.a !== authorizationId) throw new TokenError();
+}
+export function checkCaptureToken(token: unknown, captureId: string): { orderId: string } {
+  const d = verifyToken<{ k: string; c: string; o: string }>(typeof token === "string" ? token : undefined);
+  if (!d || d.k !== "cap" || d.c !== captureId) throw new TokenError();
+  return { orderId: d.o };
+}
+export class TokenError extends Error {
+  status = 403;
+  code = "NOT_YOUR_PAYMENT";
+  constructor() {
+    super("This payment action isn't authorized for this browser.");
   }
 }
