@@ -53,6 +53,8 @@ export interface RawOffer {
   pickup?: boolean;
   deliveryDays?: number;
   notes?: string;
+  /** false when the store says it's out of stock. */
+  inStock?: boolean;
 }
 
 function domainOf(url?: string): string | undefined {
@@ -109,6 +111,7 @@ export function rankOffers(raw: RawOffer[], market: string): Offer[] {
       flags.push("few_perfect_reviews");
     }
     if (!r.url) flags.push("no_source_link");
+    if (r.inStock === false) flags.push("out_of_stock");
 
     const priceScore = maxT === minT ? 1 : 1 - (total - minT) / (maxT - minT);
     // Bayesian average: pull ratings with few reviews toward 3.8.
@@ -126,6 +129,7 @@ export function rankOffers(raw: RawOffer[], market: string): Offer[] {
     // Never let a too-good-to-be-true deal win on price alone.
     if (trust === "suspicious") raw01 *= 0.3;
     else if (flags.includes("suspicious_discount")) raw01 *= 0.7;
+    if (flags.includes("out_of_stock")) raw01 *= 0.2;
     const score = Math.round(raw01 * 1000) / 10;
 
     return {
@@ -154,9 +158,12 @@ export function rankOffers(raw: RawOffer[], market: string): Offer[] {
 
   offers.sort(
     (a, b) =>
-      Number(a.trust === "suspicious") - Number(b.trust === "suspicious") || (b.score ?? 0) - (a.score ?? 0),
+      Number(a.trust === "suspicious") - Number(b.trust === "suspicious") ||
+      Number(a.flags.includes("out_of_stock")) - Number(b.flags.includes("out_of_stock")) ||
+      (b.score ?? 0) - (a.score ?? 0),
   );
-  const eligible = offers.filter((o) => o.trust !== "suspicious");
+  // Badges only go to offers you can actually buy.
+  const eligible = offers.filter((o) => o.trust !== "suspicious" && !o.flags.includes("out_of_stock"));
   const pool = eligible.length ? eligible : offers;
 
   const cheapest = [...pool].sort((a, b) => a.total - b.total)[0];

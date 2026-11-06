@@ -26,6 +26,7 @@ const OFFER_SCHEMA = {
     pickup: { type: "boolean" },
     deliveryDays: { type: "number" },
     notes: { type: "string", description: "One short factual line, e.g. 'In stock, official warranty'" },
+    inStock: { type: "boolean", description: "false if the store shows it as out of stock / unavailable" },
   },
   required: ["title", "store", "price", "currency"],
 };
@@ -442,7 +443,7 @@ async function execTool(
       ctx.emit({ type: "block", block: { type: "products", offers: ranked } });
       void recordPrices(ranked);
       // "Buy now or wait?" for the best non-suspicious offer.
-      const top = ranked.find((o) => o.trust !== "suspicious");
+      const top = ranked.find((o) => o.trust !== "suspicious" && !o.flags.includes("out_of_stock"));
       let advice: unknown;
       if (top) {
         try {

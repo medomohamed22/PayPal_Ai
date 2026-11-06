@@ -592,6 +592,7 @@ const FLAG_TEXT: Record<string, { ar: string; en: string }> = {
   suspicious_discount: { ar: "خصم مبالغ فيه — غالبًا وهمي", en: "Inflated 'was' price — likely fake discount" },
   few_perfect_reviews: { ar: "تقييمات كاملة لكن قليلة جدًا", en: "Few, perfect reviews" },
   no_source_link: { ar: "مفيش لينك للمصدر", en: "No source link" },
+  out_of_stock: { ar: "خلصان حاليًا", en: "Out of stock" },
 };
 
 export function ProductCards({
