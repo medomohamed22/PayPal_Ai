@@ -30,6 +30,7 @@ function loadSdk(): Promise<PayPalNS | null> {
         s.src = `https://www.paypal.com/sdk/js?${params}`;
         s.async = true;
         s.dataset.namespace = "paypalDalil";
+        s.dataset.pageType = "checkout";
         s.onload = () => resolve((window as unknown as { paypalDalil?: PayPalNS }).paypalDalil ?? null);
         s.onerror = () => resolve(null);
         document.head.appendChild(s);
@@ -41,17 +42,19 @@ function loadSdk(): Promise<PayPalNS | null> {
 
 export default function PayLaterMessage({ amount, currency, lang }: { amount: number; currency: string; lang: Lang }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [state, setState] = useState<"loading" | "sdk" | "fallback">("loading");
+  // Our own line shows immediately; PayPal's official message replaces it only once it really renders.
+  const [official, setOfficial] = useState(false);
   const eligible = currency === "USD" && amount >= 30 && amount <= 10000;
 
   useEffect(() => {
     if (!eligible) return;
     let alive = true;
-    const timer = setTimeout(() => alive && setState((s) => (s === "loading" ? "fallback" : s)), 5000);
+    let poll: ReturnType<typeof setInterval> | undefined;
+    setOfficial(false);
     loadSdk().then(async (pp) => {
-      if (!alive) return;
-      if (!pp || !ref.current) return setState("fallback");
+      if (!alive || !pp || !ref.current) return;
       try {
+        ref.current.innerHTML = "";
         const dark = document.documentElement.classList.contains("dark");
         await pp
           .Messages({
@@ -61,29 +64,41 @@ export default function PayLaterMessage({ amount, currency, lang }: { amount: nu
             style: { layout: "text", logo: { type: "inline" }, text: { color: dark ? "white" : "monochrome", size: 12 } },
           })
           .render(ref.current);
-        if (alive) setState(ref.current?.childElementCount ? "sdk" : "fallback");
+        let tries = 0;
+        poll = setInterval(() => {
+          const h = ref.current?.querySelector("iframe")?.getBoundingClientRect().height ?? 0;
+          if (h > 8 && alive) setOfficial(true);
+          if (h > 8 || ++tries > 16) clearInterval(poll);
+        }, 250);
       } catch {
-        if (alive) setState("fallback");
+        /* keep our own line */
       }
     });
     return () => {
       alive = false;
-      clearTimeout(timer);
+      if (poll) clearInterval(poll);
     };
   }, [amount, eligible]);
 
   if (!eligible) return null;
   const ar = lang === "ar";
+  const inFour = amount <= 1500;
+  const part = formatMoney(Math.round((amount / 4) * 100) / 100, "USD", "en");
   return (
     <div className="rounded-xl border border-line px-3 py-2">
-      <div ref={ref} className={state === "fallback" ? "hidden" : "min-h-[18px]"} dir="ltr" />
-      {state === "fallback" && (
+      {/* Rendered off-screen until PayPal's iframe has real height, then swapped in. */}
+      <div ref={ref} className={official ? "" : "pointer-events-none absolute -left-[9999px] w-[340px]"} dir="ltr" />
+      {!official && (
         <div className="flex items-center gap-2 text-[12px] text-fg-soft" dir="auto">
           <CalendarClock className="size-3.5 shrink-0" />
           <span>
-            {ar
-              ? `أو قسّطها مع PayPal Pay Later: ٤ دفعات × ${formatMoney(Math.round((amount / 4) * 100) / 100, "USD", "en")} من غير فوايد — اختار «Pay Later» في شباك PayPal`
-              : `Or pay later with PayPal: 4 interest-free payments of ${formatMoney(Math.round((amount / 4) * 100) / 100, "USD", "en")} — choose “Pay Later” in the PayPal window`}
+            {inFour
+              ? ar
+                ? <>قسّطها مع <b className="font-semibold text-fg">PayPal Pay Later</b>: ٤ دفعات × {part} من غير فوايد — اختار «Pay Later» في شباك PayPal</>
+                : <>Pay later with <b className="font-semibold text-fg">PayPal</b>: 4 interest-free payments of {part} — choose “Pay Later” in the PayPal window</>
+              : ar
+                ? <>قسّطها شهريًا مع <b className="font-semibold text-fg">PayPal Pay Monthly</b> — اختار «Pay Later» في شباك PayPal</>
+                : <>Pay monthly with <b className="font-semibold text-fg">PayPal Pay Later</b> — choose “Pay Later” in the PayPal window</>}
           </span>
         </div>
       )}
