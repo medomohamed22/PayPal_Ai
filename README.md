@@ -61,7 +61,7 @@ Open **Settings** → paste your Meta Model API key (stored only in your browser
 | `EGP_PER_USD` | | e.g. `50` (PayPal doesn't settle EGP) |
 | Upstash Redis | for watches | **Storage → Upstash → Redis** (adds `KV_REST_API_URL` / `KV_REST_API_TOKEN`) |
 | `CRON_SECRET` | for watches | any random string |
-| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | for push | `npx web-push generate-vapid-keys` |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | for push | `npx web-push generate-vapid-keys` |
 
 3. Redeploy and check `GET /api/paypal/status` → `{"configured": true, "env": "sandbox"}`.
 4. Vercel Hobby runs the cron once a day. For checks every 15 minutes, create a free job at cron-job.org → `GET https://<your-app>/api/cron` with header `Authorization: Bearer <CRON_SECRET>`. While the app is open it also checks watches every 30 s.
