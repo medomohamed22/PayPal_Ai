@@ -520,6 +520,10 @@ const signedNotNeg = (offers) => offers.filter((o) => o.trust !== 'suspicious' &
       const r = await call('POST', `/api/family/${fam.id}/confirm`, { orderId: 'ORDNOTTHEONE0001' }, { 'x-device-id': DEV_B });
       check('family', 'family: confirm with a different order id is refused', r.s === 404, r.t);
     });
+    await step('family', 'family: another device that learned the order id cannot take over the approval', async () => {
+      const r = await call('POST', `/api/family/${fam.id}/confirm`, { orderId: famPay.orderId }, { 'x-device-id': DEV_A });
+      check('family', 'family: another device that learned the order id cannot take over the approval', r.s === 403 && r.j.code === 'NOT_APPROVER', r.t);
+    });
     await step('family', 'family: approval places a hold on the approver\'s PayPal', async () => {
       const r = await call('POST', `/api/family/${fam.id}/confirm`, { orderId: famPay.orderId }, { 'x-device-id': DEV_B });
       check('family', 'family: approval places a hold on the approver\'s PayPal', r.s === 200 && r.j.request.status === 'held', r.t);
@@ -587,7 +591,7 @@ const signedNotNeg = (offers) => offers.filter((o) => o.trust !== 'suspicious' &
       const c2 = await buy(offer);
       const cheaper = pool.find((o) => Math.abs(o.total - offer.total) > 1);
       const r = await call('POST', '/api/protection', { ...c2, offer: cheaper, demo: true }, { 'x-device-id': DEV_A });
-      check('protect', "protection: a cheaper offer can't be passed off as what was paid", r.s === 409 && r.j.code === 'CAPTURE_MISMATCH', r.t);
+      check('protect', "protection: a cheaper offer can't be passed off as what was paid", r.s === 409 && ['CAPTURE_MISMATCH', 'OFFER_MISMATCH'].includes(r.j.code), r.t);
     });
     await step('protect', 'protection: other devices cannot read it', async () => {
       const r = await call('GET', `/api/protection/${prot.id}`, undefined, { 'x-device-id': DEV_B });

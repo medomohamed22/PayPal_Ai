@@ -470,6 +470,12 @@ export async function getCapture(captureId: string): Promise<{ id: string; statu
   return { id: r.id, status: r.status, amount: r.amount.value, currency: r.amount.currency_code };
 }
 
+/** The purchase-unit reference ids of an order (each single purchase uses the signed offer's id). */
+export async function getOrderReferenceIds(orderId: string): Promise<string[]> {
+  const o = await pp<OrderJson>(`/v2/checkout/orders/${pid(orderId)}`);
+  return (o.purchase_units ?? []).map((u) => u.reference_id ?? "").filter(Boolean);
+}
+
 export async function voidAuthorization(authorizationId: string): Promise<{ status: string }> {
   if (!/^[A-Z0-9]{10,25}$/.test(authorizationId)) throw new PayPalError("Invalid authorization id", 400);
   await pp(`/v2/payments/authorizations/${pid(authorizationId)}/void`, { method: "POST" });

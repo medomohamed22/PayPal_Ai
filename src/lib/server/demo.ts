@@ -244,7 +244,8 @@ async function runDemoCart(opts: {
     const fair = ranked.filter((o) => o.trust !== "suspicious" && !o.flags.includes("suspicious_discount"));
     const used = new Set(picks.map((p) => p.store));
     const best = fair[0];
-    const alt = fair.find((o) => !used.has(o.store) && o.total <= best.total * 1.03);
+    // Up to 15% more is still a fair pick when it means the cart really spans stores.
+    const alt = fair.find((o) => !used.has(o.store) && o.total <= best.total * 1.15);
     if (best) picks.push(used.has(best.store) && alt ? alt : best);
   }
   if (signal?.aborted || !picks.length) return;
@@ -253,8 +254,8 @@ async function runDemoCart(opts: {
   const money = formatMoney(Math.round(total * 100) / 100, picks[0].currency, lang);
   const text =
     lang === "ar"
-      ? `حطيت أفضل عرض لكل منتج في سلة واحدة: ${picks.length} منتجات من ${stores} متاجر بإجمالي ${money}. **موافقة واحدة في PayPal** وكل متجر بيتحجزله المبلغ بتاعه لوحده — تقدر تلغي أي متجر خلال 10 دقايق.\n\n_بيانات تجريبية (Demo mode)._`
-      : `I put the best offer for each item in one cart: ${picks.length} items from ${stores} stores, ${money} total. **One PayPal approval** — each store gets its own hold, so you can cancel any store within 10 minutes.\n\n_Sample data (Demo mode)._`;
+      ? `حطيت أفضل عرض لكل منتج في سلة واحدة: ${picks.length} منتجات من ${stores === 1 ? "متجر واحد" : `${stores} متاجر`} بإجمالي ${money}. **موافقة واحدة في PayPal** وكل متجر بيتحجزله المبلغ بتاعه لوحده — تقدر تلغي أي متجر خلال 10 دقايق.\n\n_بيانات تجريبية (Demo mode)._`
+      : `I put the best offer for each item in one cart: ${picks.length} items from ${stores} store${stores === 1 ? "" : "s"}, ${money} total. **One PayPal approval** — each store gets its own hold, so you can cancel any store within 10 minutes.\n\n_Sample data (Demo mode)._`;
   for (const part of Array.from(text).reduce<string[]>((a, ch, i) => (i % 6 ? ((a[a.length - 1] += ch), a) : [...a, ch]), [])) {
     if (signal?.aborted) return;
     emit({ type: "text", delta: part });

@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { getCapture, PayPalError, refundCapture } from "./paypal";
+import { getCapture, getOrderReferenceIds, PayPalError, refundCapture } from "./paypal";
 import { kv, storePersistent } from "./store";
 import { fetchLivePrice, notifyDevice, WatchError } from "./watches";
 import { PROTECTION_DAYS, type Offer, type Protection } from "../types";
@@ -32,6 +32,12 @@ const MIN_LIVE_CHECK_MS = 60 * 60_000;
 const HISTORY_MAX = 60;
 const MAX_SIMULATED_DROP = 0.15;
 const MAX_PER_DEVICE = 50;
+/**
+ * A live "price" more than this far under the price paid is far more likely a
+ * misread page (a monthly plan, an accessory, a coupon) than a real drop — so it
+ * is recorded but never refunded automatically.
+ */
+const MAX_LIVE_DROP = 0.5;
 
 const K = {
   rec: (id: string) => `protect:${id}`,
@@ -88,6 +94,10 @@ export async function createProtection(
   if ((await kv.smembers(K.device(device))).length >= MAX_PER_DEVICE) throw new WatchError("Too many protected purchases", 429, "TOO_MANY");
 
   // The capture PayPal actually made must be this signed offer's charge.
+  // ...and the order that was captured must be the order for THIS signed offer,
+  // so a different (or attacker-hosted) product page can't be swapped in afterwards.
+  const refs = await getOrderReferenceIds(input.orderId);
+  if (!refs.includes(offer.id)) throw new WatchError("This offer isn't the one that was paid for", 409, "OFFER_MISMATCH");
   const cap = await getCapture(captureId);
   if (cap.status !== "COMPLETED") throw new WatchError(`This payment is ${cap.status.toLowerCase()} — nothing to protect`, 409, "CAPTURE_NOT_COMPLETED");
   const expected = offer.chargeAmount ?? offer.total;
@@ -183,7 +193,10 @@ async function check(r: ProtectionRecord, force = false): Promise<ProtectionReco
     if (due) {
       try {
         const p = await fetchLivePrice(r.url, r.currency);
-        if (p != null) await observe(r, p, false);
+        if (p != null && p < r.paidPrice * (1 - MAX_LIVE_DROP)) {
+          r.lastCheckedAt = Date.now();
+          r.message = `Ignored an implausible price (${p} ${r.currency}) — needs a manual check.`;
+        } else if (p != null) await observe(r, p, false);
         else r.lastCheckedAt = Date.now();
       } catch (e) {
         r.lastCheckedAt = Date.now();

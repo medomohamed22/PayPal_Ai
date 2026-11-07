@@ -42,6 +42,10 @@ http.createServer((req, res) => {
       });
       return send(201, { id: m[1], status: 'COMPLETED', payment_source: { paypal: { email_address: 'buyer@personal.example.com' } }, purchase_units: units });
     }
+    if ((m = u.match(/^\/v2\/checkout\/orders\/(\w+)$/)) && req.method === 'GET') {
+      const o = orders[m[1]]; if (!o) return send(404, { name: 'RESOURCE_NOT_FOUND' });
+      return send(200, { id: m[1], status: o.status, purchase_units: o.b.purchase_units.map((pu) => ({ reference_id: pu.reference_id, amount: pu.amount })) });
+    }
     if ((m = u.match(/^\/v2\/checkout\/orders\/(\w+)\/track$/))) { const b = JSON.parse(body); orders[m[1]].tracking = b; return send(201, { id: m[1], status: 'COMPLETED' }); }
     if ((m = u.match(/^\/v2\/payments\/captures\/(\w+)\/refund$/))) {
       const b = JSON.parse(body); const cap = captures[m[1]];

@@ -217,11 +217,12 @@ export async function confirmApproval(id: string, orderId: string, device?: stri
   return withLock(id, async () => {
     const r = await load(id);
     if (!r.orderId || r.orderId !== orderId) throw new FamilyError("Unknown payment for this request", 404, "UNKNOWN_ORDER");
+    // Only the browser that started this payment can complete it (and become the approver).
+    if (r.approver && device !== r.approver) throw new FamilyError("This payment was started on another device", 403, "NOT_APPROVER");
     if (r.status === "paying") {
       const a = await authorizeOrder(orderId);
       r.authorizationId = a.authorizationId;
       r.approverEmail = a.payerEmail;
-      r.approver = device ?? r.approver;
       r.status = "held";
       r.decidedAt = Date.now();
       r.holdExpiresAt = Date.now() + HOLD_MINUTES * 60_000;
