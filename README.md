@@ -32,7 +32,7 @@ Shopping agents (Grok, ChatGPT, Perplexity, Google, Amazon) race to "buy faster"
 ## PayPal APIs used
 - **OAuth 2.0** client credentials
 - **Orders v2**: create (`AUTHORIZE`, `shipping_preference: GET_FROM_FILE`, `user_action: PAY_NOW`), authorize, **track**
-- **Orders v2 with several `purchase_units`**: one order for a multi-store cart (one authorization per store)
+- **Orders v2 with several `purchase_units`**: one `CAPTURE` order for a multi-store cart, captured once on approval (one capture per store)
 - **Payments v2**: capture, void, refund (full, and **partial** for price protection), get capture details
 - **Vault v3**: setup tokens → payment tokens (save PayPal for auto-buy, no purchase needed), `vault_id` merchant-initiated orders
 
@@ -56,8 +56,8 @@ full refund for an order problem ─► protection ends
 ## How a multi-store cart works
 ```
 cart (≤10 signed offers, one currency) ─► POST /api/paypal/cart   verify every signature + mandate on the total
-   ─► Orders v2 AUTHORIZE with one purchase_unit per store ─► one PayPal approval
-   ─► capture ─► one capture per store ─► cancel any store within 10 minutes = full refund
+   ─► Orders v2 CAPTURE with one purchase_unit per store ─► one PayPal approval
+   ─► POST /api/paypal/cart/capture ─► one capture per store ─► cancel any store within 10 minutes = full refund
 ```
 
 ## How family approval works

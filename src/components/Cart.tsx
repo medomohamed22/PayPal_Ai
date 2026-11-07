@@ -32,7 +32,7 @@ function useNow(active: boolean) {
 
 const UNIT_LABEL: Record<CartUnit["status"], { ar: string; en: string }> = {
   pending: { ar: "مستني", en: "Pending" },
-  held: { ar: "محجوز", en: "Held" },
+  held: { ar: "اتدفع · ينفع تلغيه", en: "Paid · can cancel" },
   captured: { ar: "اتخصم", en: "Charged" },
   refunded: { ar: "اترجع", en: "Refunded" },
   voided: { ar: "اتلغى", en: "Released" },
