@@ -7,7 +7,7 @@ import { catalogSearch, channel3Enabled } from "./channel3";
 import { streamChat, webSearch, type ChatMsg, type FunctionTool, type MetaConfig } from "./meta";
 import { isRedirectLink, rankOffers, type RawOffer } from "./rank";
 import { prepareOffer, prepareOffers } from "./sign";
-import { PriceEvidence } from "./evidence";
+import { normUrl, PriceEvidence } from "./evidence";
 import type { AgentEvent, Lang, Market, Offer, Step, WireMessage } from "../types";
 
 const OFFER_SCHEMA = {
@@ -231,13 +231,15 @@ const TIME_BUDGET_MS = Number(process.env.DALIL_TIME_BUDGET_MS) || 75_000;
 export async function runAgent(opts: RunOptions): Promise<void> {
   const { cfg, market, city, lang, emit, signal } = opts;
   const started = Date.now();
-  const pages = new Map<string, { image?: string; rating?: number; reviewCount?: number; productId?: string; domain?: string }>();
+  /** Real store domain behind catalog redirect links (normalized link → domain), from trusted data only. */
+  const storeDomains = new Map<string, string>();
+  const pages = new Map<string, { image?: string; rating?: number; reviewCount?: number; productId?: string }>();
   const state = { offersShown: false };
   const evidence = new PriceEvidence();
   for (const o of opts.knownOffers ?? []) {
     evidence.addObserved(o.url, o.price);
     // A signed offer behind a catalog redirect link keeps the store domain the server resolved for it.
-    if (o.url && o.trust === "verified" && isRedirectLink(o.url)) pages.set(o.url, { domain: o.store.toLowerCase() });
+    if (o.url && o.trust === "verified" && isRedirectLink(o.url)) storeDomains.set(normUrl(o.url) ?? o.url, o.store.toLowerCase());
   }
   const trustedSearch = !!opts.trustedSearch;
   const catalog = market === "US" && channel3Enabled();
@@ -322,7 +324,7 @@ export async function runAgent(opts: RunOptions): Promise<void> {
         if (call.name === "catalog_search") step.detail = clip(String(args.query ?? (args.use_photo ? "photo" : "")), 90);
           emit({ type: "step", step });
           try {
-            const output = await execTool(call.name, args, { cfg, market, emit, signal, pages, state, photo, browser, viaBrowser, evidence, trustedSearch });
+            const output = await execTool(call.name, args, { cfg, market, emit, signal, pages, state, photo, browser, viaBrowser, evidence, trustedSearch, storeDomains });
             const hosts =
               call.name === "catalog_search" && Array.isArray(output)
                 ? Array.from(new Set((output as Array<{ store: string }>).map((o) => o.store))).slice(0, 8)
@@ -368,9 +370,10 @@ async function execTool(
     market: Market;
     emit: (e: AgentEvent) => void;
     signal?: AbortSignal;
-    pages: Map<string, { image?: string; rating?: number; reviewCount?: number; productId?: string; domain?: string }>;
+    pages: Map<string, { image?: string; rating?: number; reviewCount?: number; productId?: string }>;
     state: { offersShown: boolean };
     evidence: PriceEvidence;
+    storeDomains: Map<string, string>;
     trustedSearch: boolean;
     photo?: string;
     browser?: BrowserSession;
@@ -426,7 +429,10 @@ async function execTool(
       for (const it of items) {
         ctx.evidence.addObserved(it.url, it.price);
         // Catalog links are Channel3 redirects; the store's real domain comes from Channel3's own data (never from the model).
-        if (it.url) ctx.pages.set(it.url, { image: it.image, rating: it.rating, reviewCount: it.reviewCount, productId: it.productId, domain: it.store });
+        if (it.url) {
+          ctx.pages.set(it.url, { image: it.image, rating: it.rating, reviewCount: it.reviewCount, productId: it.productId });
+          ctx.storeDomains.set(normUrl(it.url) ?? it.url, it.store);
+        }
       }
       if (!items.length) return { results: [], hint: "No catalog match — use web_search." };
       return items.slice(0, 12).map(({ productId: _id, ...o }) => o);
@@ -467,7 +473,7 @@ async function execTool(
         const f = o?.url ? ctx.pages.get(o.url) : undefined;
         return f ? { ...o, image: o.image || f.image, rating: o.rating ?? f.rating, reviewCount: o.reviewCount ?? f.reviewCount } : o;
       });
-      const ranked = prepareOffers(rankOffers(raw, ctx.market, (u) => ctx.pages.get(u)?.domain).map(ground));
+      const ranked = prepareOffers(rankOffers(raw, ctx.market, (u) => ctx.storeDomains.get(normUrl(u) ?? u)).map(ground));
       if (!ranked.length) throw new Error("no valid offers");
       ctx.state.offersShown = true;
       ctx.emit({ type: "block", block: { type: "products", offers: ranked } });
@@ -508,7 +514,7 @@ async function execTool(
       };
     }
     case "request_purchase_approval": {
-      const [ranked] = rankOffers([args as unknown as RawOffer], ctx.market, (u) => ctx.pages.get(u)?.domain) as Offer[];
+      const [ranked] = rankOffers([args as unknown as RawOffer], ctx.market, (u) => ctx.storeDomains.get(normUrl(u) ?? u)) as Offer[];
       if (!ranked) throw new Error("invalid offer");
       const offer = prepareOffer(ground(ranked));
       if (offer.flags.includes("price_unverified")) {
@@ -524,7 +530,7 @@ async function execTool(
       };
     }
     case "propose_watch": {
-      const [ranked] = rankOffers([args as unknown as RawOffer], ctx.market, (u) => ctx.pages.get(u)?.domain) as Offer[];
+      const [ranked] = rankOffers([args as unknown as RawOffer], ctx.market, (u) => ctx.storeDomains.get(normUrl(u) ?? u)) as Offer[];
       if (!ranked) throw new Error("invalid offer");
       const offer = prepareOffer(ground(ranked));
       if (offer.flags.includes("price_unverified")) {

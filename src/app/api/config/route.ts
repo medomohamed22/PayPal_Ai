@@ -10,5 +10,6 @@ export async function GET() {
     hostedAI: hostedEnabled(),
     hostedDailyLimit: hostedEnabled() ? hostedLimits().perVisitor : 0,
     catalog: channel3Enabled(),
+    build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local",
   });
 }
