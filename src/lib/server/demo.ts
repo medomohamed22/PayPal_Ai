@@ -254,8 +254,8 @@ async function runDemoCart(opts: {
   const money = formatMoney(Math.round(total * 100) / 100, picks[0].currency, lang);
   const text =
     lang === "ar"
-      ? `حطيت أفضل عرض لكل منتج في سلة واحدة: ${picks.length} منتجات من ${stores === 1 ? "متجر واحد" : `${stores} متاجر`} بإجمالي ${money}. **موافقة واحدة في PayPal** وكل متجر بيتحجزله المبلغ بتاعه لوحده — تقدر تلغي أي متجر خلال 10 دقايق.\n\n_بيانات تجريبية (Demo mode)._`
-      : `I put the best offer for each item in one cart: ${picks.length} items from ${stores} store${stores === 1 ? "" : "s"}, ${money} total. **One PayPal approval** — each store gets its own hold, so you can cancel any store within 10 minutes.\n\n_Sample data (Demo mode)._`;
+      ? `حطيت أفضل عرض لكل منتج في سلة واحدة: ${picks.length} منتجات من ${stores === 1 ? "متجر واحد" : `${stores} متاجر`} بإجمالي ${money}. **موافقة واحدة في PayPal** وكل متجر بيتدفعله لوحده — تقدر تلغي أي متجر خلال 10 دقايق ويرجعلك مبلغه كامل.\n\n_بيانات تجريبية (Demo mode)._`
+      : `I put the best offer for each item in one cart: ${picks.length} items from ${stores} store${stores === 1 ? "" : "s"}, ${money} total. **One PayPal approval** — each store is paid on its own, and you can cancel any store within 10 minutes for a full refund.\n\n_Sample data (Demo mode)._`;
   for (const part of Array.from(text).reduce<string[]>((a, ch, i) => (i % 6 ? ((a[a.length - 1] += ch), a) : [...a, ch]), [])) {
     if (signal?.aborted) return;
     emit({ type: "text", delta: part });
