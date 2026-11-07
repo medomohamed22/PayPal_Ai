@@ -246,3 +246,22 @@ What these prove: a refund can't exceed what's left on the capture or go past 15
 151. ✅ Real PayPal Sandbox buyer · savings dashboard after purchases
 152. ✅ Real PayPal Sandbox buyers · group buy: 2 people pay → both captured
 
+
+### Price protection, multi-store cart, family approval (PR #1) — real model + real PayPal Sandbox on the live site
+
+Model: `muse-spark-1.3-contributor` (server key). Script: `tests/scenarios/features-ui.js` (credentials from env vars only).
+
+153. ✅ Price protection · real search (Anker Nano Pro 20W, Best Buy $9.99) → PayPal → capture → protection on → 4 simulated drops = 4 real partial refunds ($1.49), stops at the 15% floor ($8.50)
+154. ✅ Multi-store cart · real search (MX Master 3S) → Newegg + Logitech in one cart → ONE PayPal approval → one capture per store → cancel Logitech = full refund, Newegg stays paid
+155. ✅ Family approval · real model drafts the purchase with the family panel open → limit below total refused → link → requester can't approve own request → approver on another phone pays from PayPal → funds held → confirm → paid; HTML in the name not executed
+156. ✅ API + attack suite on the live site: 113/113 · locally: 145/145
+
+| Found while testing PR #1 | Fix |
+|---|---|
+| **Real PayPal rejects `intent=AUTHORIZE` for orders with several purchase units** (`UNSUPPORTED_INTENT`) — the per-store-hold cart could never work outside the stand-in | Cart is one `CAPTURE` order; each store gets its own capture + capture token; cancelling a store within 10 min refunds it in full. Stand-in now rejects multi-unit AUTHORIZE like the real API |
+| **Every Channel3 offer ranked "unknown"** (links go through `buy.trychannel3.com`) → with the default "verified stores only" mandate no US catalog offer could be bought | Store domain for redirect links comes from Channel3's own data on the server (matched on host + path), never from the model |
+| Real model said "I can't ask your mom to pay" — the agent didn't know the new features | `request_purchase_approval` gains `ask_family`; prompt explains the family link and the cart |
+| Price protection could be attached to a different signed offer with the same amount | The PayPal order's reference id must be the offer's id |
+| A misread live price could refund up to the whole payment | Live drops >50% are recorded, never auto-refunded |
+| Family: anyone who learned the PayPal order id could complete the approval from their device | Only the device that started the payment can confirm it |
+| Demo cart put both items in one store ("Approve 1 store", "1 stores") | Picks a second store within 15% of the best price; singular/plural fixed |

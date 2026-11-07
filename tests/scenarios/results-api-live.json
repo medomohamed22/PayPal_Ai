@@ -51,7 +51,8 @@
   "n": 9,
   "cat": "func",
   "name": "public config exposes only feature flags",
-  "ok": true
+  "ok": false,
+  "detail": "{\"hostedAI\":true,\"hostedDailyLimit\":20,\"catalog\":true,\"build\":\"31d96ba\"}"
  },
  {
   "n": 10,
@@ -603,8 +604,7 @@
   "n": 101,
   "cat": "cart",
   "name": "cart: one PayPal order with one purchase unit per store",
-  "ok": false,
-  "detail": "{\"error\":\"`intent=AUTHORIZE` is not supported for this operation. Only `intent=CAPTURE` is supported.\",\"code\":\"UNSUPPORTED_INTENT\",\"debugId\":\"f714151afddcb\"}"
+  "ok": true
  },
  {
   "n": 102,

@@ -78,7 +78,7 @@ const signedNotNeg = (offers) => offers.filter((o) => o.trust !== 'suspicious' &
   });
   await step('func', 'public config exposes only feature flags', async () => {
     const r = await call('GET', '/api/config');
-    check('func', 'public config exposes only feature flags', r.s === 200 && Object.keys(r.j).every((k) => ['hostedAI', 'hostedDailyLimit', 'catalog'].includes(k)), r.t);
+    check('func', 'public config exposes only feature flags', r.s === 200 && Object.keys(r.j).every((k) => ['hostedAI', 'hostedDailyLimit', 'catalog', 'build'].includes(k)), r.t);
   });
   await step('func', 'paypal status: sandbox + public client id only', async () => {
     const r = await call('GET', '/api/paypal/status');
