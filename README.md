@@ -3,7 +3,7 @@
 > **Dalil** ("guide") finds the best deal for a product from a **name, a link or a photo**, checks that the price is real, negotiates with the store's own agent, and **only pays with your approval through PayPal**. The money is **held first, not taken**, so you can cancel. After you buy, it keeps protecting you: price-drop refunds, price watches, one-approval multi-store carts, family approval and group buys.
 
 **Live app:** https://paypalai-m.vercel.app · press **Demo** (or open https://paypalai-m.vercel.app/?demo=1)
-**Demo video (2:53):** _YouTube link_ · also in the repo: [`media/dalil-demo.mp4`](media/dalil-demo.mp4)
+**Demo video (2:53):** https://youtu.be/2jD_28eN1iY · also in the repo: [`media/dalil-demo.mp4`](media/dalil-demo.mp4)
 **Built for:** PayPal AI Hackathon 2026 · **AI:** Meta Muse Spark (`muse-spark-1.3-contributor`, Meta Model API) · **Payments:** PayPal sandbox · **Market:** United States, English
 
 ---
