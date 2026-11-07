@@ -1,0 +1,214 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: #08080a; font-family: Inter, "Inter Display", system-ui, sans-serif; color: #fff; -webkit-font-smoothing: antialiased; }
+  #bg { position: absolute; inset: 0; overflow: hidden; background: radial-gradient(120% 90% at 30% 20%, #17171b 0%, #0b0b0d 55%, #060607 100%); }
+  .blob { position: absolute; border-radius: 50%; filter: blur(120px); opacity: .55; }
+  #b1 { width: 900px; height: 900px; background: #1c2a4a; }
+  #b2 { width: 700px; height: 700px; background: #2a2a30; }
+  #grain { position: absolute; inset: 0; opacity: .05; background-image: radial-gradient(#fff 0.6px, transparent 0.6px); background-size: 3px 3px; }
+
+  #stage { position: absolute; inset: 0; perspective: 2200px; perspective-origin: 40% 50%; }
+  #win { position: absolute; left: 56px; top: 108px; width: 1440px; height: 856px; border-radius: 16px; overflow: hidden; background: #fff;
+         box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 40px 120px -20px rgba(0,0,0,.8), 0 20px 50px -30px rgba(0,0,0,.9); transform-style: preserve-3d; will-change: transform; }
+  #bar { height: 46px; background: #f3f3f4; border-bottom: 1px solid #e3e3e5; display: flex; align-items: center; padding: 0 16px; gap: 14px; position: relative; }
+  .dots { display: flex; gap: 8px; }
+  .dots i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .dots i:nth-child(1) { background: #ff5f57; } .dots i:nth-child(2) { background: #febc2e; } .dots i:nth-child(3) { background: #28c840; }
+  #url { position: absolute; left: 50%; transform: translateX(-50%); height: 30px; min-width: 460px; padding: 0 16px; border-radius: 9px; background: #e7e7e9; color: #3a3a3c; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; letter-spacing: .1px; }
+  #url svg { width: 13px; height: 13px; }
+  #speed { position: absolute; right: 16px; height: 28px; padding: 0 12px; border-radius: 99px; background: #0a0a0a; color: #fff; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; opacity: 0; }
+  #speed svg { width: 14px; height: 14px; }
+  #screen { position: absolute; left: 0; top: 46px; width: 1440px; height: 810px; overflow: hidden; background: #fff; }
+  #screen img { position: absolute; left: 0; top: 0; width: 1600px; height: 900px; transform-origin: 0 0; will-change: transform; }
+
+  #phone { position: absolute; left: 1080px; top: 92px; width: 392px; height: 880px; border-radius: 54px; background: #0a0a0a; padding: 12px;
+           box-shadow: 0 0 0 2px #2b2b2e, 0 50px 120px -20px rgba(0,0,0,.85); opacity: 0; transform-style: preserve-3d; }
+  #phone .scr { position: relative; width: 368px; height: 796px; border-radius: 42px; overflow: hidden; background: #fff; }
+  #phone .scr img { position: absolute; left: 0; top: 0; width: 368px; height: auto; }
+  #phone .notch { position: absolute; left: 50%; top: 22px; transform: translateX(-50%); width: 110px; height: 30px; border-radius: 20px; background: #0a0a0a; z-index: 3; }
+  #phone .lbl { position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; font-size: 15px; font-weight: 600; color: #fff; letter-spacing: .3px; }
+  #phone .lbl span { color: #9a9aa0; font-weight: 500; }
+
+  #pop { position: absolute; left: 512px; top: 128px; width: 528px; border-radius: 12px; overflow: hidden; background: #fff; opacity: 0;
+         box-shadow: 0 0 0 1px rgba(0,0,0,.12), 0 50px 120px -10px rgba(0,0,0,.65); }
+  #pop .pbar { height: 34px; background: #f3f3f4; border-bottom: 1px solid #e3e3e5; display: flex; align-items: center; padding: 0 12px; gap: 10px; font-size: 12.5px; color: #3a3a3c; }
+  #pop .pbar .u { flex: 1; text-align: center; display: flex; align-items: center; justify-content: center; gap: 6px; margin-right: 46px; }
+  #pop img { display: block; width: 528px; height: 792px; }
+  #pop .dots i { width: 10px; height: 10px; }
+  #side { position: absolute; left: 1536px; top: 108px; width: 344px; height: 856px; display: flex; flex-direction: column; opacity: 0; }
+  #brand { display: flex; align-items: center; gap: 12px; font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
+  #brand img, .logo { width: 34px; height: 34px; }
+  #brand small { display: block; font-size: 12px; font-weight: 500; color: #8d8d93; letter-spacing: .2px; margin-top: 1px; }
+  #chap { margin-top: 64px; }
+  #chapno { font: 600 12px/1 "SF Mono", ui-monospace, Menlo, monospace; letter-spacing: 2.5px; color: #8d8d93; text-transform: uppercase; }
+  #chaptitle { margin-top: 14px; font-size: 32px; line-height: 1.12; font-weight: 700; letter-spacing: -.6px; }
+  #chapsub { margin-top: 10px; font-size: 14px; color: #a2a2a8; line-height: 1.4; }
+  #rule { margin: 26px 0 22px; height: 1px; background: linear-gradient(90deg, rgba(255,255,255,.22), rgba(255,255,255,0)); }
+  #caps { font-size: 19px; line-height: 1.5; color: #fff; }
+  #caps span { transition: none; }
+  #foot { margin-top: auto; }
+  #prog { display: flex; gap: 6px; margin-bottom: 18px; }
+  #prog i { flex: 1; height: 3px; border-radius: 3px; background: rgba(255,255,255,.14); display: block; overflow: hidden; position: relative; }
+  #prog i b { position: absolute; inset: 0; background: #fff; transform-origin: 0 0; }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill { font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 99px; background: rgba(255,255,255,.07); color: #d6d6da; border: 1px solid rgba(255,255,255,.08); display: inline-flex; align-items: center; gap: 6px; }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: #34d058; box-shadow: 0 0 8px #34d058; }
+
+  #intro, #outro { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 0; }
+  .big { display: flex; align-items: center; gap: 26px; }
+  .big .logo { width: 120px; height: 120px; }
+  .word { font-size: 132px; font-weight: 800; letter-spacing: -5px; display: flex; }
+  .word span { display: inline-block; }
+  .tag { margin-top: 26px; font-size: 34px; font-weight: 500; color: #c9c9cf; letter-spacing: -.4px; }
+  .tag b { color: #fff; font-weight: 700; }
+  .chips { margin-top: 34px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; max-width: 1300px; }
+  .chips .pill { font-size: 17px; padding: 10px 16px; }
+  .urlpill { margin-top: 40px; font-size: 24px; font-weight: 600; padding: 14px 26px; border-radius: 99px; background: #fff; color: #0a0a0a; display: flex; align-items: center; gap: 10px; }
+  .credit { margin-top: 22px; font-size: 15px; color: #8d8d93; letter-spacing: .3px; }
+</style>
+</head>
+<body>
+  <div id="bg"><div class="blob" id="b1"></div><div class="blob" id="b2"></div><div id="grain"></div></div>
+  <div id="stage">
+    <div id="win">
+      <div id="bar">
+        <div class="dots"><i></i><i></i><i></i></div>
+        <div id="url"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span id="urltext">paypalai-m.vercel.app</span></div>
+        <div id="speed"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 6v12l8.5-6zM12.5 6v12L21 12z"/></svg><span id="speedtext">Sped up</span></div>
+      </div>
+      <div id="screen"><img id="sA" /><img id="sB" /></div>
+    </div>
+    <div id="pop"><div class="pbar"><div class="dots"><i></i><i></i><i></i></div><div class="u"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>sandbox.paypal.com · PayPal Checkout</div></div><img id="popA" /></div>
+    <div id="phone"><div class="scr"><div class="notch"></div><img id="pA" /></div></div>
+  </div>
+
+  <div id="side">
+    <div id="brand"><img src="logo.svg" /><div>Dalil<small>AI shopping agent · PayPal</small></div></div>
+    <div id="chap">
+      <div id="chapno"></div>
+      <div id="chaptitle"></div>
+      <div id="chapsub"></div>
+    </div>
+    <div id="rule"></div>
+    <div id="caps"></div>
+    <div id="foot">
+      <div id="prog"></div>
+      <div class="pills"><span class="pill"><span class="dot"></span>Live site</span><span class="pill">Real AI</span><span class="pill">PayPal sandbox</span></div>
+    </div>
+  </div>
+
+  <div id="intro">
+    <div class="big"><img class="logo" id="ilogo" src="logo.svg" /><div class="word" id="iword"></div></div>
+    <div class="tag" id="itag">The AI shopping agent that <b>pays with PayPal</b>, safely.</div>
+    <div class="chips" id="ichips"></div>
+  </div>
+  <div id="outro">
+    <div class="big"><img class="logo" id="ologo" src="logo.svg" /><div class="word" id="oword"></div></div>
+    <div class="tag" id="otag">Shops like an expert. <b>Pays with PayPal</b>, safely.</div>
+    <div class="chips" id="ochips"></div>
+    <div class="urlpill" id="ourl"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0a0a0a" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>paypalai-m.vercel.app</div>
+    <div class="credit" id="ocredit">PayPal AI Hackathon 2026 · Try the guided demo on the live site</div>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const eo = (t) => 1 - Math.pow(1 - clamp(t), 3); // ease-out cubic
+  const eio = (t) => { t = clamp(t); return t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; };
+  const span = (el, text) => { el.innerHTML = [...text].map((c) => `<span>${c === ' ' ? '&nbsp;' : c}</span>`).join(''); };
+  span($('iword'), 'Dalil'); span($('oword'), 'Dalil');
+  const introChips = ['Real AI search', 'Signed prices', 'Spending mandate', 'Agent negotiation', 'PayPal hold & capture'];
+  const outroChips = ['Real AI search', 'Signed prices', 'Spending mandate', 'Agent-to-agent negotiation', 'PayPal hold → capture', 'Trust receipt', 'Price protection', 'Price watch', 'Multi-store cart', 'Family approval', 'Group buy', 'Savings'];
+  $('ichips').innerHTML = introChips.map((c) => `<span class="pill">${c}</span>`).join('');
+  $('ochips').innerHTML = outroChips.map((c) => `<span class="pill">${c}</span>`).join('');
+  let progN = 0;
+
+  const loaded = {};
+  async function setImg(el, src) {
+    if (!src) { el.style.visibility = 'hidden'; return; }
+    el.style.visibility = 'visible';
+    if (el.dataset.src !== src) {
+      el.dataset.src = src;
+      el.src = src;
+      try { await el.decode(); } catch (e) {}
+    }
+  }
+
+  window.render = async (s) => {
+    // background drift
+    $('b1').style.transform = `translate(${-200 + Math.sin(s.t / 9) * 120}px, ${-260 + Math.cos(s.t / 11) * 90}px)`;
+    $('b2').style.transform = `translate(${1300 + Math.cos(s.t / 10) * 140}px, ${520 + Math.sin(s.t / 8) * 100}px)`;
+
+    // intro
+    const it = s.introT;
+    if (it != null && it < 6) {
+      $('intro').style.opacity = 1 - eio((it - 3.7) / 0.7);
+      $('intro').style.transform = `translateY(${-eio((it - 3.7) / 0.7) * 60}px)`;
+      $('ilogo').style.transform = `scale(${0.5 + 0.5 * eo(it / 0.8)}) rotate(${(1 - eo(it / 1.1)) * -200}deg)`;
+      $('ilogo').style.opacity = eo(it / 0.5);
+      [...$('iword').children].forEach((c, i) => { const p = eo((it - 0.45 - i * 0.07) / 0.55); c.style.opacity = p; c.style.transform = `translateY(${(1 - p) * 40}px) rotateX(${(1 - p) * 80}deg)`; });
+      $('itag').style.opacity = eo((it - 1.2) / 0.6); $('itag').style.transform = `translateY(${(1 - eo((it - 1.2) / 0.6)) * 18}px)`;
+      [...$('ichips').children].forEach((c, i) => { const p = eo((it - 1.8 - i * 0.12) / 0.45); c.style.opacity = p; c.style.transform = `translateY(${(1 - p) * 14}px) scale(${0.9 + 0.1 * p})`; });
+    } else $('intro').style.opacity = 0;
+
+    // window transform (3D fly-in / fly-out)
+    let wt = '', wo = 1;
+    if (s.winIn != null) { const p = eo(s.winIn / 1.5); wt = `translateY(${(1 - p) * 420}px) translateZ(${(1 - p) * -300}px) rotateX(${(1 - p) * 32}deg) rotateY(${(1 - p) * -14}deg)`; wo = clamp(s.winIn / 0.5); }
+    if (s.winOut != null) { const p = eio(s.winOut / 1.3); wt = `translateX(${-p * 260}px) translateZ(${-p * 900}px) rotateY(${p * 38}deg) rotateX(${p * 6}deg)`; wo = 1 - eio((s.winOut - 0.6) / 0.7); }
+    $('win').style.transform = wt; $('win').style.opacity = wo;
+    $('side').style.opacity = s.sideOpacity;
+    $('side').style.transform = `translateX(${(1 - s.sideOpacity) * 30}px)`;
+
+    // screen
+    $('urltext').textContent = s.url;
+    await Promise.all([setImg($('sA'), s.a), setImg($('sB'), s.b), setImg($('pA'), s.phoneSrc), setImg($('popA'), s.popSrc)]);
+    const po = eo(s.pop); $('pop').style.opacity = clamp(s.pop * 1.4); $('pop').style.transform = `translateY(${(1 - po) * 40}px) scale(${0.9 + 0.1 * po})`;
+    const tf = (z) => `translate(${720 - z.cx * z.k}px, ${405 - z.cy * z.k}px) scale(${z.k})`;
+    $('sA').style.transform = tf(s.zoom); $('sA').style.opacity = 1;
+    $('sB').style.transform = tf(s.zoom); $('sB').style.opacity = s.b ? s.bOpacity : 0;
+    const dim = Math.max(s.phone * 0.18, s.pop * 0.35); $('screen').style.filter = dim > 0 ? `brightness(${1 - dim})` : '';
+
+    // phone
+    const pp = eo(s.phone);
+    $('phone').style.opacity = clamp(s.phone * 1.6);
+    $('phone').style.transform = `translateX(${(1 - pp) * 260}px) translateZ(${(1 - pp) * -200}px) rotateY(${(1 - pp) * -42}deg)`;
+
+    // speed badge
+    $('speed').style.opacity = s.speedOpacity;
+    $('speedtext').textContent = s.speedText;
+
+    // side column
+    if (s.chapter) {
+      if ($('chaptitle').dataset.k !== s.chapter.key) {
+        $('chaptitle').dataset.k = s.chapter.key;
+        $('chapno').textContent = s.chapter.no;
+        $('chaptitle').textContent = s.chapter.title;
+        $('chapsub').textContent = s.chapter.sub;
+      }
+      const cp = eo(s.chapter.age / 0.6);
+      $('chap').style.opacity = cp; $('chap').style.transform = `translateY(${(1 - cp) * 22}px)`;
+      $('caps').innerHTML = s.caps.map((c) => `<span style="opacity:${c.o.toFixed(3)}">${c.text} </span>`).join('');
+    }
+    if (progN !== s.progTotal) { $('prog').innerHTML = Array.from({ length: s.progTotal }, () => '<i><b></b></i>').join(''); progN = s.progTotal; }
+    [...$('prog').children].forEach((el, i) => { el.firstChild.style.transform = `scaleX(${clamp(s.progress - i)})`; });
+
+    // outro
+    const ot = s.outroT;
+    if (ot != null && ot > 0) {
+      $('outro').style.opacity = eo((ot - 0.7) / 0.6);
+      $('ologo').style.transform = `scale(${0.6 + 0.4 * eo((ot - 0.7) / 0.8)}) rotate(${(1 - eo((ot - 0.7) / 1.1)) * 160}deg)`;
+      [...$('oword').children].forEach((c, i) => { const p = eo((ot - 0.9 - i * 0.07) / 0.55); c.style.opacity = p; c.style.transform = `translateY(${(1 - p) * 40}px) rotateX(${(1 - p) * 80}deg)`; });
+      $('otag').style.opacity = eo((ot - 1.5) / 0.6);
+      [...$('ochips').children].forEach((c, i) => { const p = eo((ot - 2.0 - i * 0.09) / 0.45); c.style.opacity = p; c.style.transform = `translateY(${(1 - p) * 14}px) scale(${0.9 + 0.1 * p})`; });
+      $('ourl').style.opacity = eo((ot - 3.3) / 0.6); $('ourl').style.transform = `scale(${0.85 + 0.15 * eo((ot - 3.3) / 0.6)})`;
+      $('ocredit').style.opacity = eo((ot - 3.8) / 0.6);
+    } else $('outro').style.opacity = 0;
+    return true;
+  };
+</script>
+</body>
+</html>

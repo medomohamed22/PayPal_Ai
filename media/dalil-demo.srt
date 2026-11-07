@@ -1,0 +1,131 @@
+1
+00:00:00,600 --> 00:00:10,317
+Meet Dalil: an AI shopping agent that finds the best deal, negotiates for you, and pays with PayPal, with guardrails the AI can't bypass.
+
+2
+00:00:11,118 --> 00:00:12,938
+I just ask in plain English.
+
+3
+00:00:12,938 --> 00:00:17,945
+Dalil searches a live product catalog and the web, then compares real offers.
+
+4
+00:00:17,945 --> 00:00:24,578
+Every price is signed by the server, so the AI can't make one up, and every store gets a trust rating.
+
+5
+00:00:24,578 --> 00:00:29,325
+It even reads the price history and tells me whether to buy now, or wait.
+
+6
+00:00:30,325 --> 00:00:31,926
+Now, a spending limit.
+
+7
+00:00:31,926 --> 00:00:34,328
+I set my maximum to five dollars.
+
+8
+00:00:34,328 --> 00:00:41,169
+The AI still proposes the purchase, but the server enforces my mandate and blocks the payment.
+
+9
+00:00:41,169 --> 00:00:42,916
+My rules beat the model.
+
+10
+00:00:43,916 --> 00:00:48,916
+Next, Dalil negotiates agent to agent with the store's own seller agent.
+
+11
+00:00:48,916 --> 00:00:53,708
+It asks for a better deal, and comes back with a lower, signed price.
+
+12
+00:00:53,708 --> 00:00:55,305
+No haggling on my side.
+
+13
+00:00:56,305 --> 00:01:01,821
+When I'm ready, I approve with PayPal, on the real PayPal checkout, here in the sandbox.
+
+14
+00:01:01,821 --> 00:01:07,900
+Dalil authorizes first, so the money is only held, not taken, and I get a short window to cancel.
+
+15
+00:01:07,900 --> 00:01:14,356
+Then the payment is captured, and I get a trust receipt showing exactly what was checked before I paid.
+
+16
+00:01:20,240 --> 00:01:24,438
+For fourteen days after I buy, Dalil keeps watching the price.
+
+17
+00:01:24,438 --> 00:01:29,855
+If it drops, I automatically get the difference back as a partial PayPal refund.
+
+18
+00:01:29,855 --> 00:01:32,361
+A real refund, with no forms to fill.
+
+19
+00:01:34,800 --> 00:01:36,239
+Not ready to buy yet?
+
+20
+00:01:36,239 --> 00:01:39,664
+I set a target price, and Dalil watches it for me.
+
+21
+00:01:39,664 --> 00:01:42,610
+The moment the price drops, I get an alert.
+
+22
+00:01:46,594 --> 00:01:48,762
+Shopping from more than one store?
+
+23
+00:01:48,762 --> 00:01:54,180
+Dalil builds a multi-store cart and pays every store with one single PayPal approval.
+
+24
+00:01:54,180 --> 00:02:01,510
+Each store is tracked on its own, so if I change my mind about one, I cancel just that store and get a full refund.
+
+25
+00:02:08,175 --> 00:02:10,121
+Sometimes, someone else pays.
+
+26
+00:02:10,121 --> 00:02:13,209
+With family approval, I send a link to my mom.
+
+27
+00:02:13,209 --> 00:02:21,262
+She sees exactly what I'm buying, approves on her own phone, and pays from her own PayPal account, within a limit I set.
+
+28
+00:02:30,628 --> 00:02:32,040
+Buying with friends?
+
+29
+00:02:32,040 --> 00:02:34,227
+One group link splits the cost.
+
+30
+00:02:34,227 --> 00:02:38,178
+And every dollar Dalil saves me is tracked in one place.
+
+31
+00:02:42,575 --> 00:02:43,095
+Dalil.
+
+32
+00:02:43,095 --> 00:02:48,464
+An AI that shops like an expert, and pays with PayPal, safely.
+
+33
+00:02:48,464 --> 00:02:50,543
+Try the live demo today.
