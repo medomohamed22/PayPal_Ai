@@ -15,6 +15,8 @@ import {
   Trash2,
   X,
   Zap,
+  AlertTriangle,
+  type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatMoney } from "@/lib/i18n";
@@ -64,6 +66,8 @@ export interface Toast {
   title: string;
   body?: string;
   image?: string;
+  /** Icon shown in the toast (as a badge on the image when there is one). */
+  icon?: LucideIcon;
   action?: { label: string; run: () => void };
 }
 
@@ -82,10 +86,17 @@ export function Toasts({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id:
             className="pointer-events-auto flex w-full max-w-md items-center gap-3 rounded-2xl border border-line bg-bg/95 p-2.5 pe-3 shadow-card backdrop-blur"
           >
             {t.image ? (
-              <SmartImage src={t.image} alt="" className="size-11 shrink-0 rounded-xl" />
+              <div className="relative shrink-0">
+                <SmartImage src={t.image} alt="" className="size-11 rounded-xl" />
+                {t.icon && (
+                  <span className="absolute -bottom-1 -end-1 flex size-5 items-center justify-center rounded-full border-2 border-bg bg-inv-bg text-inv-fg">
+                    <t.icon className="size-2.5" strokeWidth={2.5} />
+                  </span>
+                )}
+              </div>
             ) : (
               <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-inv-bg text-inv-fg">
-                <BellRing className="size-5" />
+                {t.icon ? <t.icon className="size-5" /> : <BellRing className="size-5" />}
               </div>
             )}
             <div className="min-w-0 flex-1">
@@ -369,8 +380,10 @@ export function WatchCard({
                 w.status === "triggered" || w.status === "held" || w.status === "bought" ? "bg-inv-bg text-inv-fg" : "border border-line"
               } ${w.status === "error" ? "text-danger" : ""}`}
             >
-              {w.mode === "auto" ? "⚡ " : ""}
-              {STATUS[w.status][lang]}
+              <span className="inline-flex items-center gap-1">
+                {w.mode === "auto" && <Zap className="size-2.5 fill-current" />}
+                {STATUS[w.status][lang]}
+              </span>
             </span>
           </div>
           <div className="line-clamp-1 text-sm font-medium" dir="auto">
@@ -517,17 +530,24 @@ export function WatchesPanel({
               </button>
             </div>
             {persistent === false && (
-              <p className="mx-5 mb-2 rounded-xl border border-dashed border-line-strong px-3 py-2 text-[11px] leading-snug text-fg-muted">
+              <p className="mx-5 mb-2 flex items-start gap-2 rounded-xl border border-dashed border-line-strong px-3 py-2 text-[11px] leading-snug text-fg-muted">
+                <AlertTriangle className="mt-px size-3.5 shrink-0" />
                 {ar
-                  ? "⚠️ التخزين مؤقت على السيرفر (Upstash Redis مش متظبط) — المراقبات ممكن تتمسح."
-                  : "⚠️ Server storage is temporary (Upstash Redis not configured) — watches may be lost."}
+                  ? "التخزين مؤقت على السيرفر (Upstash Redis مش متظبط) — المراقبات ممكن تتمسح."
+                  : "Server storage is temporary (Upstash Redis not configured) — watches may be lost."}
               </p>
             )}
             <div className="flex-1 space-y-3 overflow-y-auto px-5 pb-5">
               {watches.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 py-16 text-center text-sm text-fg-muted">
                   <Bell className="size-8" strokeWidth={1.25} />
-                  {ar ? "مفيش مراقبات لسه. دوس 🔔 على أي منتج." : "No watches yet. Tap 🔔 on any product."}
+                  <span className="inline-flex flex-wrap items-center justify-center gap-1">
+                    {ar ? "مفيش مراقبات لسه. دوس" : "No watches yet. Tap"}
+                    <span className="inline-flex size-5 items-center justify-center rounded-full border border-line text-fg">
+                      <Bell className="size-3" />
+                    </span>
+                    {ar ? "على أي منتج." : "on any product."}
+                  </span>
                 </div>
               ) : (
                 <AnimatePresence initial={false}>
@@ -563,8 +583,8 @@ export function WatchDraftCard({ offer, targetPrice, mode, lang, onOpen }: { off
         <div className="line-clamp-1 text-sm font-medium" dir="auto">
           {offer.title}
         </div>
-        <div className="text-xs text-fg-muted">
-          {mode === "auto" ? "⚡ " : "🔔 "}
+        <div className="flex items-center gap-1 text-xs text-fg-muted">
+          {mode === "auto" ? <Zap className="size-3 fill-current" /> : <Bell className="size-3" />}
           {ar ? "الهدف" : "Target"}: {targetPrice ? formatMoney(targetPrice, offer.currency, lang) : "—"}
         </div>
       </div>

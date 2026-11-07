@@ -177,13 +177,13 @@ export async function runDemo(opts: {
   if (lang === "ar") {
     await say(
       `أفضل اختيار: **${best.store}** بإجمالي ${money} (السعر + الشحن)، وده أحسن توازن بين السعر والتقييم وثقة المتجر.` +
-        (sus ? `\n\n⚠️ خلي بالك: عرض **${sus.store}** شكله وهمي — السعر أقل من السوق بكتير والتقييمات قليلة.` : "") +
+        (sus ? `\n\n> **خلي بالك:** عرض **${sus.store}** شكله وهمي — السعر أقل من السوق بكتير والتقييمات قليلة.` : "") +
         `\n\n_بيانات تجريبية (Demo mode)._`,
     );
   } else {
     await say(
       `Best pick: **${best.store}** at ${money} total (price + shipping) — the best balance of price, rating and store trust.` +
-        (sus ? `\n\n⚠️ Heads up: the **${sus.store}** offer looks fake — far below market price with very few reviews.` : "") +
+        (sus ? `\n\n> **Heads up:** the **${sus.store}** offer looks fake — far below market price with very few reviews.` : "") +
         `\n\n_Sample data (Demo mode)._`,
     );
   }

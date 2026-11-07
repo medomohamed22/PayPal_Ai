@@ -28,6 +28,7 @@ import {
   MousePointerClick,
   Handshake,
   AppWindow,
+  ArrowRight,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatMoney, type Strings } from "@/lib/i18n";
@@ -174,20 +175,21 @@ function Favicon({ host, className }: { host: string; className?: string }) {
   );
 }
 
+const TIP_ICONS = [Scale, ShieldCheck, ScanSearch, BellPlus, MapPin] as const;
 const TIPS = {
   ar: [
-    "💡 دليل بيقارن السعر النهائي بعد الشحن، مش سعر الرف بس",
-    "🛡️ مفيش جنيه بيتخصم من غير موافقتك — والمبلغ بيتحجز الأول",
-    "🔍 بيكشف الخصومات الوهمية والمتاجر المشبوهة",
-    "🔔 تقدر تقوله «راقب السعر» ويبلغك أول ما ينزل",
-    "📍 بيحسب المسافة لأقرب محل لو حابب تستلم بنفسك",
+    "دليل بيقارن السعر النهائي بعد الشحن، مش سعر الرف بس",
+    "مفيش جنيه بيتخصم من غير موافقتك — والمبلغ بيتحجز الأول",
+    "بيكشف الخصومات الوهمية والمتاجر المشبوهة",
+    "تقدر تقوله «راقب السعر» ويبلغك أول ما ينزل",
+    "بيحسب المسافة لأقرب محل لو حابب تستلم بنفسك",
   ],
   en: [
-    "💡 Dalil compares the total cost after shipping, not just the sticker price",
-    "🛡️ Nothing is charged without your approval — funds are held first",
-    "🔍 It flags fake discounts and suspicious stores",
-    "🔔 Say “watch the price” and it alerts you when it drops",
-    "📍 It measures the distance to the nearest store for pickup",
+    "Dalil compares the total cost after shipping, not just the sticker price",
+    "Nothing is charged without your approval — funds are held first",
+    "It flags fake discounts and suspicious stores",
+    "Say “watch the price” and it alerts you when it drops",
+    "It measures the distance to the nearest store for pickup",
   ],
 };
 
@@ -383,9 +385,17 @@ export function StepsTimeline({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.3 }}
-              className="text-[11.5px] text-fg-muted"
+              className="flex items-center gap-2 text-[11.5px] text-fg-muted"
             >
-              {tips[tip % tips.length]}
+              {(() => {
+                const TipIcon = TIP_ICONS[tip % tips.length];
+                return (
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-bg-muted text-fg">
+                    <TipIcon className="size-3" />
+                  </span>
+                );
+              })()}
+              <span className="min-w-0">{tips[tip % tips.length]}</span>
             </motion.p>
           </AnimatePresence>
         </div>
@@ -917,7 +927,10 @@ function AfterCare({
                 className="flex w-full items-center justify-between rounded-xl border border-line px-3 py-2.5 text-xs hover:border-fg"
               >
                 {label}
-                {busy === k ? <Loader2 className="size-3.5 animate-spin" /> : <span className="text-fg-muted">{ar ? "استرجاع ←" : "Refund →"}</span>}
+                {busy === k ? <Loader2 className="size-3.5 animate-spin" /> : <span className="inline-flex items-center gap-1 text-fg-muted">
+                    {ar ? "استرجاع" : "Refund"}
+                    <ArrowRight className="size-3 rtl:-scale-x-100" />
+                  </span>}
               </button>
             ))}
             <button onClick={() => setAsking(false)} className="w-full py-1 text-[11px] text-fg-muted underline">

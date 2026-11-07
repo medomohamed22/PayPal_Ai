@@ -250,7 +250,7 @@ async function evaluate(r: WatchRecord, price: number | null): Promise<void> {
           };
           r.message = undefined;
           await notify(r.device, {
-            title: `✅ Dalil bought it: ${r.title}`.slice(0, 80),
+            title: `Dalil bought it: ${r.title}`.slice(0, 80),
             body: `${money(offer.total, r.currency)} at ${r.store} — funds HELD. Cancel within ${HOLD_MINUTES} min.`,
             url: `/?watch=${r.id}`,
             tag: `watch-${r.id}`,
@@ -271,7 +271,7 @@ async function evaluate(r: WatchRecord, price: number | null): Promise<void> {
     r.status = "triggered";
     r.triggeredOffer = offer;
     await notify(r.device, {
-      title: `🔔 Price drop: ${r.title}`.slice(0, 80),
+      title: `Price drop: ${r.title}`.slice(0, 80),
       body: `${money(offer.total, r.currency)} at ${r.store} (target ${money(r.targetPrice, r.currency)}). Tap to buy.`,
       url: `/?watch=${r.id}`,
       tag: `watch-${r.id}`,
@@ -288,7 +288,7 @@ async function evaluate(r: WatchRecord, price: number | null): Promise<void> {
       r.captureId = c.id;
       r.message = undefined;
       await notify(r.device, {
-        title: `📦 Purchase confirmed: ${r.title}`.slice(0, 80),
+        title: `Purchase confirmed: ${r.title}`.slice(0, 80),
         body: `Paid ${r.hold.amount} ${r.hold.currency} via PayPal.`,
         url: `/?watch=${r.id}`,
         tag: `watch-${r.id}`,

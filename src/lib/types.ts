@@ -116,6 +116,8 @@ export interface ChatMessage {
 export interface Conversation {
   id: string;
   title: string;
+  /** Optional leading icon in the sidebar (watch alerts, photo searches). */
+  icon?: "bell" | "camera";
   createdAt: number;
   updatedAt: number;
 }

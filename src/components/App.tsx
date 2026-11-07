@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Bell, HandCoins, Menu, Moon, PanelLeft, Plus, Settings2, Sun, Trash2, X } from "lucide-react";
+import { Bell, BellRing, Camera, CircleCheck, Eye, HandCoins, Menu, Package, Zap, Moon, PanelLeft, Plus, Settings2, Sun, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { db, getKV, loadSettings, requestPersistence, saveSettings, setKV, uid } from "@/lib/db";
 import {
@@ -33,6 +33,7 @@ import {
   type WatchMode,
   type WireMessage,
   type Negotiation,
+  type Conversation,
   type NegotiationEvent,
   purchaseContext,
 } from "@/lib/types";
@@ -245,13 +246,13 @@ export default function App() {
     setSidebarOpen(false);
   };
 
-  const ensureConversation = async (title: string) => {
+  const ensureConversation = async (title: string, icon?: Conversation["icon"]) => {
     if (convId) {
       await db().conversations.update(convId, { updatedAt: Date.now() });
       return convId;
     }
     const id = uid();
-    await db().conversations.put({ id, title: title.slice(0, 60) || "…", createdAt: Date.now(), updatedAt: Date.now() });
+    await db().conversations.put({ id, title: title.slice(0, 60) || "…", ...(icon ? { icon } : {}), createdAt: Date.now(), updatedAt: Date.now() });
     setConvId(id);
     return id;
   };
@@ -263,7 +264,10 @@ export default function App() {
         setSettingsOpen(true);
         return;
       }
-      const cid = await ensureConversation(p.text || p.links[0]?.title || "📷");
+      const cid = await ensureConversation(
+        p.text || p.links[0]?.title || (ar ? "بحث بالصورة" : "Photo search"),
+        !p.text && !p.links.length && p.images.length ? "camera" : undefined,
+      );
       const now = Date.now();
       const userBlocks: Block[] = [
         ...p.images.map((dataUrl) => ({ type: "image" as const, dataUrl })),
@@ -474,7 +478,7 @@ export default function App() {
       let cid = convId;
       if (!cid) {
         cid = uid();
-        await db().conversations.put({ id: cid, title: `🔔 ${w.title}`.slice(0, 60), createdAt: Date.now(), updatedAt: Date.now() });
+        await db().conversations.put({ id: cid, title: w.title.slice(0, 60), icon: "bell", createdAt: Date.now(), updatedAt: Date.now() });
         setConvId(cid);
       }
       const focusId = uid();
@@ -501,17 +505,17 @@ export default function App() {
         if (!before || before === w.status) continue;
         const price = w.lastPrice != null ? `${w.lastPrice.toLocaleString(ar ? "ar-EG-u-nu-latn" : "en-US")} ${w.currency}` : "";
         if (w.status === "triggered") {
-          const title = ar ? `🔔 السعر نزل: ${w.title}` : `🔔 Price drop: ${w.title}`;
+          const title = ar ? `السعر نزل: ${w.title}` : `Price drop: ${w.title}`;
           const body = ar ? `${price} في ${w.store} — تحب تشتري؟` : `${price} at ${w.store} — buy it?`;
-          pushToast({ title, body, image: w.image, action: { label: ar ? "اشتري" : "Buy", run: () => buyFromWatch(w) } });
+          pushToast({ title, body, image: w.image, icon: BellRing, action: { label: ar ? "اشتري" : "Buy", run: () => buyFromWatch(w) } });
           if (document.hidden) localNotify(title, body, `/?watch=${w.id}`, w.image);
         } else if (w.status === "held") {
-          const title = ar ? `⚡ دليل اشتراه: ${w.title}` : `⚡ Dalil bought: ${w.title}`;
+          const title = ar ? `دليل اشتراه: ${w.title}` : `Dalil bought: ${w.title}`;
           const body = ar ? `المبلغ محجوز — معاك ١٠ دقايق تلغي` : `Funds held — 10 minutes to cancel`;
-          pushToast({ title, body, image: w.image, action: { label: ar ? "عرض" : "View", run: () => setWatchesOpen(true) } });
+          pushToast({ title, body, image: w.image, icon: Zap, action: { label: ar ? "عرض" : "View", run: () => setWatchesOpen(true) } });
           if (document.hidden) localNotify(title, body, `/?watch=${w.id}`, w.image);
         } else if (w.status === "bought") {
-          pushToast({ title: ar ? `📦 تم الشراء: ${w.title}` : `📦 Purchased: ${w.title}`, image: w.image });
+          pushToast({ title: ar ? `تم الشراء: ${w.title}` : `Purchased: ${w.title}`, image: w.image, icon: Package });
         }
       }
     },
@@ -604,7 +608,8 @@ export default function App() {
     setWatchDraft(null);
     if (p.notifications) enableNotifications();
     pushToast({
-      title: ar ? "بدأت المراقبة 👀" : "Watching 👀",
+      title: ar ? "بدأت المراقبة" : "Watching",
+      icon: Eye,
       body: `${watch.title} · ${ar ? "الهدف" : "target"} ${watch.targetPrice.toLocaleString(ar ? "ar-EG-u-nu-latn" : "en-US")} ${watch.currency}`,
       image: watch.image,
       action: { label: ar ? "عرض" : "View", run: () => setWatchesOpen(true) },
@@ -628,7 +633,7 @@ export default function App() {
           try {
             await watchApi.vaultConfirm(pv.setupTokenId);
             setVaultConnected(true);
-            pushToast({ title: ar ? "PayPal اتوصّل للشراء التلقائي ✅" : "PayPal connected for auto-buy ✅" });
+            pushToast({ title: ar ? "PayPal اتوصّل للشراء التلقائي" : "PayPal connected for auto-buy", icon: CircleCheck });
           } catch (e) {
             pushToast({ title: ar ? "فشل توصيل PayPal" : "Couldn't connect PayPal", body: (e as Error).message });
           }
@@ -884,10 +889,13 @@ export default function App() {
                   setConvId(c.id);
                   setSidebarOpen(false);
                 }}
-                className="min-w-0 flex-1 truncate px-2.5 py-2 text-start text-sm"
-                dir="auto"
+                className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-2 text-start text-sm"
               >
-                {c.title}
+                {c.icon === "bell" && <Bell className="size-3.5 shrink-0 text-fg-muted" />}
+                {c.icon === "camera" && <Camera className="size-3.5 shrink-0 text-fg-muted" />}
+                <span className="min-w-0 flex-1 truncate" dir="auto">
+                  {c.title}
+                </span>
               </button>
               <button
                 onClick={() => deleteConversation(c.id)}

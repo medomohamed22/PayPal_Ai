@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, AlertTriangle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Strings } from "@/lib/i18n";
@@ -99,6 +99,12 @@ export default function MessageView({
                     remarkPlugins={[remarkGfm]}
                     components={{
                       a: (p) => <a {...p} target="_blank" rel="noopener noreferrer" />,
+                      blockquote: ({ children }) => (
+                        <div className="not-prose my-3 flex items-start gap-2.5 rounded-xl border border-line bg-bg-soft px-3 py-2.5 text-sm">
+                          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" />
+                          <div className="min-w-0 [&>p]:m-0">{children}</div>
+                        </div>
+                      ),
                     }}
                   >
                     {b.text}

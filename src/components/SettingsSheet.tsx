@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { t } from "@/lib/i18n";
 import { KNOWN_MODELS, type Settings } from "@/lib/types";
 import { getKV, setKV } from "@/lib/db";
+import { FlagEG, FlagUS } from "./icons";
 
 const CITIES: Record<Settings["market"], string[]> = {
   EG: ["Cairo", "Giza", "Alexandria", "Mansoura", "Tanta"],
@@ -204,9 +205,10 @@ export default function SettingsSheet({
                           set("market", m);
                           set("city", CITIES[m][0]);
                         }}
-                        className={`rounded-lg py-2 text-xs font-medium transition-all ${draft.market === m ? "bg-bg shadow-card" : "text-fg-muted"}`}
+                        className={`flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium transition-all ${draft.market === m ? "bg-bg shadow-card" : "text-fg-muted"}`}
                       >
-                        {m === "EG" ? (isRtl ? "🇪🇬 مصر · EGP" : "🇪🇬 Egypt · EGP") : isRtl ? "🇺🇸 أمريكا · USD" : "🇺🇸 United States · USD"}
+                        {m === "EG" ? <FlagEG className="h-3 w-[18px] shrink-0" /> : <FlagUS className="h-3 w-[18px] shrink-0" />}
+                        {m === "EG" ? (isRtl ? "مصر · EGP" : "Egypt · EGP") : isRtl ? "أمريكا · USD" : "United States · USD"}
                       </button>
                     ))}
                   </div>
