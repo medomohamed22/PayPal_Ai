@@ -11,6 +11,8 @@ import {
   CheckoutError,
   clearResult,
   createCart,
+  captureCart,
+  refundPayment,
   createOrder,
   openPayPalWindow,
   PAYPAL_RESULT_KEY,
@@ -434,9 +436,9 @@ export default function App() {
     const b = m?.blocks[idx];
     if (!m || b?.type !== "cart") return;
     let next = fn(b);
-    // Once no store is still held, the cart as a whole is settled.
-    if (next.units?.length && next.status === "held" && !next.units.some((u) => u.status === "held" || u.status === "pending")) {
-      next = { ...next, status: next.units.some((u) => u.status === "captured") ? "captured" : "voided" };
+    // Every store refunded (cancelled in the window) → the whole cart is cancelled.
+    if (next.units?.length && next.status === "held" && next.units.every((u) => u.status === "refunded" || u.status === "voided")) {
+      next = { ...next, status: "voided" };
     }
     const blocks = [...m.blocks];
     blocks[idx] = next;
@@ -456,21 +458,19 @@ export default function App() {
       popup?.close();
       return;
     }
-    if (action === "cancelUnit" || action === "captureUnit" || action === "cancelAll" || action === "captureAll") {
-      const targets = (block.units ?? []).map((u, i) => ({ u, i })).filter(({ u, i }) => u.status === "held" && (action.endsWith("All") || i === arg));
+    if (action === "captureUnit" || action === "captureAll") {
+      // Keep: close the cancel window now (the stores are already paid).
+      return updateCart(msgId, idx, (b) => ({ ...b, status: "captured" }));
+    }
+    if (action === "cancelUnit" || action === "cancelAll") {
+      // Cart stores are paid on approval; cancelling one inside the window refunds it in full.
+      const targets = (block.units ?? []).map((u, i) => ({ u, i })).filter(({ u, i }) => u.status === "captured" && u.captureId && (action === "cancelAll" || i === arg));
       for (const { u, i } of targets) {
-        if (!u.authorizationId) continue;
-        await dropHold(u.authorizationId);
         try {
-          if (action.startsWith("cancel")) {
-            await voidHold(u.authorizationId, u.holdToken);
-            await setUnit(msgId, idx, i, { status: "voided" });
-          } else {
-            const c = await capture(u.authorizationId, u.holdToken);
-            await setUnit(msgId, idx, i, { status: "captured", captureId: c.id, captureToken: c.captureToken });
-          }
+          await refundPayment(u.captureId!, u.captureToken, "cancelled");
+          await setUnit(msgId, idx, i, { status: "refunded" });
         } catch (e) {
-          await setUnit(msgId, idx, i, { status: "error", message: (e as Error).message });
+          await setUnit(msgId, idx, i, { message: (e as Error).message });
         }
       }
       return;
@@ -775,21 +775,17 @@ export default function App() {
           return;
         }
         try {
-          const a = await authorize(result.orderId, pending.orderToken);
-          const captureAt = Date.now() + HOLD_MINUTES * 60_000;
-          let unitRecs: HoldRecord[] = [];
+          const a = await captureCart(result.orderId, pending.orderToken);
+          const windowEnds = Date.now() + HOLD_MINUTES * 60_000;
           await updateCart(msgId, idx, (b) => {
-            const units = (b.units ?? []).map((u, i) => {
-              const h = a.units.find((x) => x.referenceId === u.referenceId);
-              if (!h) return { ...u, status: "error" as const, message: "No hold returned" };
-              unitRecs.push({ msgId, idx, unit: i, authorizationId: h.authorizationId, holdToken: h.holdToken, captureAt });
-              return { ...u, status: "held" as const, authorizationId: h.authorizationId, holdToken: h.holdToken, charge: h.amount.value };
+            const units = (b.units ?? []).map((u) => {
+              const c = a.units.find((x) => x.referenceId === u.referenceId);
+              if (!c) return { ...u, status: "error" as const, message: "No capture returned" };
+              return { ...u, status: "captured" as const, captureId: c.captureId, captureToken: c.captureToken, charge: c.amount.value };
             });
-            return { ...b, status: "held", holdExpiresAt: captureAt, units, shipping: a.shipping, payerEmail: a.payerEmail };
+            // "held" here = paid, still inside the window where any store can be cancelled for a full refund.
+            return { ...b, status: "held", holdExpiresAt: windowEnds, units, shipping: a.shipping, payerEmail: a.payerEmail };
           });
-          const holds = (await getKV<HoldRecord[]>("holds")) ?? [];
-          await setKV("holds", [...holds, ...unitRecs]);
-          unitRecs = [];
         } catch (e) {
           await updateCart(msgId, idx, (b) => ({ ...b, status: "error", message: (e as Error).message }));
         }

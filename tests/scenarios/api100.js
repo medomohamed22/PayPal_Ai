@@ -543,22 +543,29 @@ const signedNotNeg = (offers) => offers.filter((o) => o.trust !== 'suspicious' &
       check('family', 'family: requester can cancel a pending request', r.s === 200 && r.j.request.status === 'cancelled' && p.s === 409, r.t + p.t);
     });
 
-    // Cart: approve once → one hold per store → each store captured or voided on its own.
-    await step('cart', 'cart: one approval → one hold per store', async () => {
-      const r = await call('POST', '/api/paypal/authorize', { orderId: cart.id, orderToken: cart.orderToken });
-      cart.auth = r.j;
-      check('cart', 'cart: one approval → one hold per store', r.s === 200 && r.j.units?.length === twoStores.length && r.j.units.every((u) => u.authorizationId && u.holdToken), r.t);
+    // Cart: approve once → one capture per store → any store can be cancelled with a full refund.
+    await step('cart', 'cart: capture needs the order token of this cart', async () => {
+      const r = await call('POST', '/api/paypal/cart/capture', { orderId: cart.id, orderToken: 'x.y' });
+      check('cart', 'cart: capture needs the order token of this cart', r.s === 403, r.t);
     });
-    await step('cart', 'cart: cancel one store, pay the other', async () => {
-      const [u1, u2] = cart.auth.units;
-      const v = await call('POST', '/api/paypal/void', { authorizationId: u1.authorizationId, holdToken: u1.holdToken });
-      const c = await call('POST', '/api/paypal/capture', { authorizationId: u2.authorizationId, holdToken: u2.holdToken });
-      check('cart', 'cart: cancel one store, pay the other', v.s === 200 && c.s === 200 && c.j.captureToken, v.t + c.t);
+    await step('cart', 'cart: one approval → one capture per store', async () => {
+      const r = await call('POST', '/api/paypal/cart/capture', { orderId: cart.id, orderToken: cart.orderToken });
+      cart.cap = r.j;
+      check('cart', 'cart: one approval → one capture per store', r.s === 200 && r.j.units?.length === twoStores.length && r.j.units.every((u) => u.captureId && u.captureToken), r.t);
     });
-    await step('cart', "cart: one store's hold token can't capture another store", async () => {
-      const [u1, u2] = cart.auth.units;
-      const r = await call('POST', '/api/paypal/capture', { authorizationId: u1.authorizationId, holdToken: u2.holdToken });
-      check('cart', "cart: one store's hold token can't capture another store", r.s === 403, r.t);
+    await step('cart', 'cart: capturing twice is idempotent (no double charge)', async () => {
+      const r = await call('POST', '/api/paypal/cart/capture', { orderId: cart.id, orderToken: cart.orderToken });
+      check('cart', 'cart: capturing twice is idempotent (no double charge)', r.s === 200 && r.j.units.map((u) => u.captureId).join() === cart.cap.units.map((u) => u.captureId).join(), r.t);
+    });
+    await step('cart', 'cart: cancel one store → full refund of only that store', async () => {
+      const [u1] = cart.cap.units;
+      const r = await call('POST', '/api/paypal/refund', { captureId: u1.captureId, captureToken: u1.captureToken, reason: 'cancelled' });
+      check('cart', 'cart: cancel one store → full refund of only that store', r.s === 200 && Number(r.j.amount) === Number(u1.amount.value), r.t);
+    });
+    await step('cart', "cart: one store's token can't refund another store", async () => {
+      const [u1, u2] = cart.cap.units;
+      const r = await call('POST', '/api/paypal/refund', { captureId: u2.captureId, captureToken: u1.captureToken, reason: 'cancelled' });
+      check('cart', "cart: one store's token can't refund another store", r.s === 403, r.t);
     });
 
     // Price protection: buy → protect → simulated drop refunds the difference on the capture.

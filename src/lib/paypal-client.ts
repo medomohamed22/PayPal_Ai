@@ -89,6 +89,21 @@ export function authorize(orderId: string, orderToken?: string) {
   }>("/api/paypal/authorize", { orderId, orderToken });
 }
 
+/** Multi-store cart approved → capture every store (each with its own capture token). */
+export function captureCart(orderId: string, orderToken?: string) {
+  return post<{
+    orderId: string;
+    shipping: { name?: string; address?: string };
+    payerEmail?: string;
+    units: Array<{ referenceId: string; captureId: string; status: string; amount: { value: string; currency: string }; captureToken: string }>;
+  }>("/api/paypal/cart/capture", { orderId, orderToken });
+}
+
+/** Full refund of one capture (order problem, or a cart store cancelled in its window). */
+export function refundPayment(captureId: string, captureToken: string | undefined, reason: "not_received" | "damaged" | "not_as_described" | "cancelled") {
+  return post<{ id: string; status: string; amount?: string; currency?: string }>("/api/paypal/refund", { captureId, captureToken, reason });
+}
+
 /** Multi-store cart: one PayPal order with one purchase unit per store. */
 export function createCart(offers: Offer[], mandate: Mandate) {
   return post<{

@@ -384,7 +384,7 @@ export interface CartUnit {
   holdToken?: string;
   captureId?: string;
   captureToken?: string;
-  status: "pending" | "held" | "captured" | "voided" | "error";
+  status: "pending" | "held" | "captured" | "refunded" | "voided" | "error";
   message?: string;
 }
 

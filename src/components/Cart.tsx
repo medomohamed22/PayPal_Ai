@@ -34,13 +34,16 @@ const UNIT_LABEL: Record<CartUnit["status"], { ar: string; en: string }> = {
   pending: { ar: "مستني", en: "Pending" },
   held: { ar: "محجوز", en: "Held" },
   captured: { ar: "اتخصم", en: "Charged" },
+  refunded: { ar: "اترجع", en: "Refunded" },
   voided: { ar: "اتلغى", en: "Released" },
   error: { ar: "خطأ", en: "Error" },
 };
 
 /**
- * Multi-store cart: one PayPal approval for several stores. After approval
- * every store has its own hold — cancel or confirm each one separately.
+ * Multi-store cart: one PayPal approval for several stores. PayPal only allows
+ * immediate capture for multi-store orders, so each store is paid on approval
+ * with its own capture — and any store can be cancelled for a full refund
+ * during the 10-minute window.
  */
 export function CartCard({
   block,
@@ -56,9 +59,11 @@ export function CartCard({
   const currency = block.offers[0]?.currency ?? "USD";
   const total = Math.round(groups.reduce((a, g) => a + g.subtotal, 0) * 100) / 100;
   const m = (v: number | string, c = currency) => <bdi dir={c === "USD" ? "ltr" : "auto"}>{formatMoney(Number(v), c, lang)}</bdi>;
-  const held = block.status === "held";
-  const now = useNow(held);
+  const now = useNow(block.status === "held");
   const left = Math.max(0, (block.holdExpiresAt ?? 0) - now);
+  // "held" = paid and still inside the cancel window; after it, show as paid.
+  const held = block.status === "held" && left > 0;
+  const status = block.status === "held" && !held ? "captured" : block.status;
   const clock = `${String(Math.floor(left / 60000)).padStart(2, "0")}:${String(Math.floor((left % 60000) / 1000)).padStart(2, "0")}`;
   const unitFor = (store: string) => block.units?.find((u) => u.store === store);
   const unitIdx = (store: string) => block.units?.findIndex((u) => u.store === store) ?? -1;
@@ -138,21 +143,14 @@ export function CartCard({
                   </li>
                 </ul>
                 {u?.message && <p className="mt-1 text-[11px] text-danger">{u.message}</p>}
-                {held && u?.status === "held" && ui >= 0 && (
-                  <div className="mt-2 flex gap-2">
+                {held && u?.status === "captured" && ui >= 0 && (
+                  <div className="mt-2">
                     <button
                       disabled={!!busy}
                       onClick={() => run(`c${ui}`, "cancelUnit", ui)}
-                      className="flex-1 rounded-xl border border-fg py-1.5 text-[11.5px] font-semibold disabled:opacity-50"
+                      className="w-full rounded-xl border border-fg py-1.5 text-[11.5px] font-semibold disabled:opacity-50"
                     >
-                      {busy === `c${ui}` ? <Loader2 className="mx-auto size-3.5 animate-spin" /> : ar ? "إلغاء المتجر ده" : "Cancel this store"}
-                    </button>
-                    <button
-                      disabled={!!busy}
-                      onClick={() => run(`k${ui}`, "captureUnit", ui)}
-                      className="flex-1 rounded-xl bg-inv-bg py-1.5 text-[11.5px] font-semibold text-inv-fg disabled:opacity-50"
-                    >
-                      {busy === `k${ui}` ? <Loader2 className="mx-auto size-3.5 animate-spin" /> : ar ? "أكّد" : "Confirm"}
+                      {busy === `c${ui}` ? <Loader2 className="mx-auto size-3.5 animate-spin" /> : ar ? "إلغاء المتجر ده (استرداد كامل)" : "Cancel this store (full refund)"}
                     </button>
                   </div>
                 )}
@@ -206,16 +204,16 @@ export function CartCard({
               </button>
               <p className="text-center text-[11px] leading-snug text-fg-muted">
                 {ar
-                  ? "طلب PayPal واحد فيه جزء لكل متجر. كل متجر بيتحجزله المبلغ لوحده لمدة 10 دقايق — تقدر تلغي أي واحد فيهم."
-                  : `One PayPal order with a part per store. Each store gets its own hold for ${HOLD_MINUTES} minutes — cancel any of them.`}
+                  ? "طلب PayPal واحد فيه جزء لكل متجر. كل متجر بيتخصمله لوحده، ومعاك 10 دقايق تلغي أي متجر وفلوسه ترجعلك كاملة."
+                  : `One PayPal order with a part per store. Each store is charged separately — cancel any store within ${HOLD_MINUTES} minutes for a full refund.`}
               </p>
             </motion.div>
-          ) : block.status === "held" ? (
+          ) : held ? (
             <motion.div key="h" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="inline-flex items-center gap-1.5 text-fg-muted">
                   <Clock className="size-3.5" />
-                  {ar ? "اللي محجوز هيتخصم بعد" : "Held stores charge in"}
+                  {ar ? "تقدر تلغي أي متجر خلال" : "Cancel any store for a full refund within"}
                 </span>
                 <span className="font-mono text-sm font-semibold tabular-nums" dir="ltr">
                   {clock}
@@ -226,34 +224,34 @@ export function CartCard({
                   {busy === "ca" ? <Loader2 className="mx-auto size-3.5 animate-spin" /> : ar ? "إلغاء الكل" : "Cancel all"}
                 </button>
                 <button disabled={!!busy} onClick={() => run("ka", "captureAll")} className="flex-1 rounded-2xl bg-inv-bg py-2.5 text-xs font-semibold text-inv-fg disabled:opacity-50">
-                  {busy === "ka" ? <Loader2 className="mx-auto size-3.5 animate-spin" /> : ar ? "أكّد الكل دلوقتي" : "Confirm all now"}
+                  {busy === "ka" ? <Loader2 className="mx-auto size-3.5 animate-spin" /> : ar ? "تمام، خلّصت" : "Keep all"}
                 </button>
               </div>
               <p className="flex items-start gap-1.5 text-[11px] leading-snug text-fg-muted">
                 <Lock className="mt-0.5 size-3 shrink-0" />
-                {ar ? "المبالغ محجوزة في PayPal ومتخصمتش. الغي أي متجر ويرجع فورًا." : "Funds are held in PayPal, not charged. Cancel any store to release its part instantly."}
+                {ar ? "اتدفع بموافقة واحدة في PayPal. لو لغيت متجر، فلوسه بترجع كاملة لحسابك في PayPal فورًا." : "Paid with one PayPal approval. Cancel a store and its part is refunded to your PayPal in full right away."}
               </p>
             </motion.div>
           ) : (
             <motion.div
-              key={block.status}
+              key={status}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               className={`flex items-center justify-center gap-2 rounded-2xl px-3 py-3 text-center text-sm font-semibold ${
-                block.status === "captured" ? "bg-inv-bg text-inv-fg" : "bg-bg-soft"
-              } ${block.status === "error" ? "text-danger" : ""}`}
+                status === "captured" ? "bg-inv-bg text-inv-fg" : "bg-bg-soft"
+              } ${status === "error" ? "text-danger" : ""}`}
             >
-              {block.status === "processing" && <Loader2 className="size-4 shrink-0 animate-spin" />}
-              {block.status === "captured" && <Check className="size-4 shrink-0" />}
+              {status === "processing" && <Loader2 className="size-4 shrink-0 animate-spin" />}
+              {status === "captured" && <Check className="size-4 shrink-0" />}
               {block.status === "error" && <AlertTriangle className="size-4 shrink-0" />}
               <span>
-                {block.status === "processing"
+                {status === "processing"
                   ? ar ? "بيستنى موافقة PayPal…" : "Waiting for PayPal approval…"
-                  : block.status === "captured"
+                  : status === "captured"
                     ? ar ? "اتدفع — كل متجر اتخصمله لوحده" : "Paid — each store charged separately"
-                    : block.status === "voided"
-                      ? ar ? "اتلغى — كل الحجوزات اتفكت" : "Cancelled — every hold released"
-                      : block.status === "declined"
+                    : status === "voided"
+                      ? ar ? "اتلغى — كل المتاجر رجّعت فلوسها" : "Cancelled — every store refunded"
+                      : status === "declined"
                         ? ar ? "اترفض" : "Declined"
                         : block.message}
               </span>

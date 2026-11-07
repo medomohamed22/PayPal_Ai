@@ -45,7 +45,8 @@ Run: start `mock-paypal.js` and `mock-meta.js`, build, then `BASE=http://localho
 | family | family: only the approver can confirm the charge | ✅ |
 | family | family: approver confirms → captured | ✅ |
 | family | family: requester can cancel a pending request | ✅ |
-| cart | cart: one approval → one hold per store | ✅ |
+| cart | cart: one approval → one capture per store (real PayPal refuses AUTHORIZE with several purchase units) | ✅ |
+| cart | cart: capturing twice is idempotent; cancel one store → full refund of only that store; one store's token can't refund another | ✅ |
 | cart | cart: cancel one store, pay the other | ✅ |
 | cart | cart: one store's hold token can't capture another store | ✅ |
 | protect | protection: turned on for a captured purchase | ✅ |

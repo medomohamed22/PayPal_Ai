@@ -710,149 +710,161 @@
  {
   "n": 119,
   "cat": "cart",
-  "name": "cart: one approval → one hold per store",
+  "name": "cart: capture needs the order token of this cart",
   "ok": true
  },
  {
   "n": 120,
   "cat": "cart",
-  "name": "cart: cancel one store, pay the other",
+  "name": "cart: one approval → one capture per store",
   "ok": true
  },
  {
   "n": 121,
   "cat": "cart",
-  "name": "cart: one store's hold token can't capture another store",
+  "name": "cart: capturing twice is idempotent (no double charge)",
   "ok": true
  },
  {
   "n": 122,
-  "cat": "protect",
-  "name": "protection: turned on for a captured purchase",
+  "cat": "cart",
+  "name": "cart: cancel one store → full refund of only that store",
   "ok": true
  },
  {
   "n": 123,
-  "cat": "protect",
-  "name": "protection: same purchase twice returns the same record",
+  "cat": "cart",
+  "name": "cart: one store's token can't refund another store",
   "ok": true
  },
  {
   "n": 124,
   "cat": "protect",
-  "name": "protection: another device cannot take over the purchase",
+  "name": "protection: turned on for a captured purchase",
   "ok": true
  },
  {
   "n": 125,
   "cat": "protect",
-  "name": "protection: forged capture token refused",
+  "name": "protection: same purchase twice returns the same record",
   "ok": true
  },
  {
   "n": 126,
   "cat": "protect",
-  "name": "protection: a cheaper offer can't be passed off as what was paid",
+  "name": "protection: another device cannot take over the purchase",
   "ok": true
  },
  {
   "n": 127,
   "cat": "protect",
-  "name": "protection: other devices cannot read it",
+  "name": "protection: forged capture token refused",
   "ok": true
  },
  {
   "n": 128,
   "cat": "protect",
-  "name": "protection: price drop → partial PayPal refund of the difference",
+  "name": "protection: a cheaper offer can't be passed off as what was paid",
   "ok": true
  },
  {
   "n": 129,
   "cat": "protect",
-  "name": "protection: a second drop refunds only the new difference",
+  "name": "protection: other devices cannot read it",
   "ok": true
  },
  {
   "n": 130,
   "cat": "protect",
-  "name": "protection: simulated drops stop at 15% under the price paid",
+  "name": "protection: price drop → partial PayPal refund of the difference",
   "ok": true
  },
  {
   "n": 131,
   "cat": "protect",
-  "name": "protection: refunds on PayPal match what Dalil recorded",
+  "name": "protection: a second drop refunds only the new difference",
   "ok": true
  },
  {
   "n": 132,
   "cat": "protect",
-  "name": "protection: a full order-problem refund ends protection",
+  "name": "protection: simulated drops stop at 15% under the price paid",
   "ok": true
  },
  {
   "n": 133,
   "cat": "protect",
-  "name": "protection: ended protection cannot refund again",
+  "name": "protection: refunds on PayPal match what Dalil recorded",
   "ok": true
  },
  {
   "n": 134,
   "cat": "protect",
-  "name": "cron checks protections and family requests",
+  "name": "protection: a full order-problem refund ends protection",
   "ok": true
  },
  {
   "n": 135,
+  "cat": "protect",
+  "name": "protection: ended protection cannot refund again",
+  "ok": true
+ },
+ {
+  "n": 136,
+  "cat": "protect",
+  "name": "cron checks protections and family requests",
+  "ok": true
+ },
+ {
+  "n": 137,
   "cat": "func",
   "name": "family approval page exists",
   "ok": true
  },
  {
-  "n": 136,
+  "n": 138,
   "cat": "sec",
   "name": "malicious model inventing a $1 iPhone: no approval card is shown",
   "ok": true
  },
  {
-  "n": 137,
+  "n": 139,
   "cat": "sec",
   "name": "invented price cannot be checked out (PRICE_UNVERIFIED)",
   "ok": true
  },
  {
-  "n": 138,
+  "n": 140,
   "cat": "sec",
   "name": "invented price cannot start a group buy",
   "ok": true
  },
  {
-  "n": 139,
+  "n": 141,
   "cat": "sec",
   "name": "invented price cannot be negotiated",
   "ok": true
  },
  {
-  "n": 140,
+  "n": 142,
   "cat": "func",
   "name": "real flow with mock model: prices seen in search are buyable",
   "ok": true
  },
  {
-  "n": 141,
+  "n": 143,
   "cat": "func",
   "name": "follow-up \"buy the 2nd one\" reuses signed prices from earlier",
   "ok": true
  },
  {
-  "n": 142,
+  "n": 144,
   "cat": "sec",
   "name": "forged \"earlier offers\" from the client are ignored",
   "ok": true
  },
  {
-  "n": 143,
+  "n": 145,
   "cat": "sec",
   "name": "rate limit: hammering link preview gets 429",
   "ok": true

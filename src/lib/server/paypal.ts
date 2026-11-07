@@ -232,9 +232,10 @@ export interface CartUnitInput {
 }
 
 /**
- * One PayPal order with one purchase unit per store. The buyer approves once;
- * each store's unit gets its own authorization (hold), so each can be
- * captured or voided on its own.
+ * One PayPal order with one purchase unit per store. The buyer approves once.
+ * PayPal only allows intent=CAPTURE for orders with several purchase units
+ * (AUTHORIZE is single-unit only), so the cart is paid on approval and each
+ * store gets its own capture — cancelling a store refunds that capture in full.
  */
 export async function createCartOrder(input: {
   cartId: string;
@@ -277,7 +278,7 @@ export async function createCartOrder(input: {
     method: "POST",
     requestId: `dalil-cart-${input.cartId}`.slice(0, 108),
     body: {
-      intent: "AUTHORIZE",
+      intent: "CAPTURE",
       purchase_units,
       payment_source: {
         paypal: {
@@ -340,6 +341,7 @@ type OrderJson = {
       };
     };
     payments?: {
+      captures?: Array<{ id: string; status: string; amount: { value: string; currency_code: string } }>;
       authorizations?: Array<{
         id: string;
         status: string;
@@ -383,6 +385,32 @@ function toAuthorized(o: OrderJson): Authorized {
         : [];
     }),
   };
+}
+
+export interface CartCaptured {
+  orderId: string;
+  shipping: ShippingInfo;
+  payerEmail?: string;
+  units: Array<{ referenceId: string; captureId: string; status: string; amount: { value: string; currency: string } }>;
+}
+
+/** Multi-store cart: the buyer approved once → capture every store's purchase unit. */
+export async function captureCartOrder(orderId: string): Promise<CartCaptured> {
+  if (!/^[A-Z0-9]{10,25}$/.test(orderId)) throw new PayPalError("Invalid order id", 400, "INVALID_ORDER_ID");
+  let o: OrderJson;
+  try {
+    o = await pp<OrderJson>(`/v2/checkout/orders/${pid(orderId)}/capture`, { method: "POST", body: {}, requestId: `dalil-cartcap-${orderId}` });
+  } catch (e) {
+    // Idempotency: already captured → read the captures back.
+    if (e instanceof PayPalError && e.code === "ORDER_ALREADY_CAPTURED") o = await pp<OrderJson>(`/v2/checkout/orders/${pid(orderId)}`);
+    else throw e;
+  }
+  const units = (o.purchase_units ?? []).flatMap((u, i) => {
+    const c = u.payments?.captures?.[0];
+    return c ? [{ referenceId: u.reference_id ?? String(i), captureId: c.id, status: c.status, amount: { value: c.amount.value, currency: c.amount.currency_code } }] : [];
+  });
+  if (!units.length) throw new PayPalError("PayPal returned no captures for this cart", 409, "NO_CAPTURE");
+  return { orderId: o.id ?? orderId, shipping: formatShipping(o), payerEmail: o.payment_source?.paypal?.email_address ?? o.payer?.email_address, units };
 }
 
 /** Buyer approved on PayPal → place the hold. */
