@@ -5,7 +5,7 @@ import { priceInsight, recordPrices } from "./insight";
 import { BrowserSession, browserAvailable, type PageState } from "./browser";
 import { catalogSearch, channel3Enabled } from "./channel3";
 import { streamChat, webSearch, type ChatMsg, type FunctionTool, type MetaConfig } from "./meta";
-import { rankOffers, type RawOffer } from "./rank";
+import { isRedirectLink, rankOffers, type RawOffer } from "./rank";
 import { prepareOffer, prepareOffers } from "./sign";
 import { PriceEvidence } from "./evidence";
 import type { AgentEvent, Lang, Market, Offer, Step, WireMessage } from "../types";
@@ -231,10 +231,14 @@ const TIME_BUDGET_MS = Number(process.env.DALIL_TIME_BUDGET_MS) || 75_000;
 export async function runAgent(opts: RunOptions): Promise<void> {
   const { cfg, market, city, lang, emit, signal } = opts;
   const started = Date.now();
-  const pages = new Map<string, { image?: string; rating?: number; reviewCount?: number; productId?: string }>();
+  const pages = new Map<string, { image?: string; rating?: number; reviewCount?: number; productId?: string; domain?: string }>();
   const state = { offersShown: false };
   const evidence = new PriceEvidence();
-  for (const o of opts.knownOffers ?? []) evidence.addObserved(o.url, o.price);
+  for (const o of opts.knownOffers ?? []) {
+    evidence.addObserved(o.url, o.price);
+    // A signed offer behind a catalog redirect link keeps the store domain the server resolved for it.
+    if (o.url && o.trust === "verified" && isRedirectLink(o.url)) pages.set(o.url, { domain: o.store.toLowerCase() });
+  }
   const trustedSearch = !!opts.trustedSearch;
   const catalog = market === "US" && channel3Enabled();
   const tools = [...(catalog ? [CATALOG_TOOL] : []), ...TOOLS, ...(browserAvailable() ? BROWSER_TOOLS : [])];
@@ -364,7 +368,7 @@ async function execTool(
     market: Market;
     emit: (e: AgentEvent) => void;
     signal?: AbortSignal;
-    pages: Map<string, { image?: string; rating?: number; reviewCount?: number; productId?: string }>;
+    pages: Map<string, { image?: string; rating?: number; reviewCount?: number; productId?: string; domain?: string }>;
     state: { offersShown: boolean };
     evidence: PriceEvidence;
     trustedSearch: boolean;
@@ -421,7 +425,8 @@ async function execTool(
       const items = await catalogSearch({ query, base64Image: b64, maxPrice: Number(args.max_price) || undefined }, ctx.signal);
       for (const it of items) {
         ctx.evidence.addObserved(it.url, it.price);
-        if (it.url) ctx.pages.set(it.url, { image: it.image, rating: it.rating, reviewCount: it.reviewCount, productId: it.productId });
+        // Catalog links are Channel3 redirects; the store's real domain comes from Channel3's own data (never from the model).
+        if (it.url) ctx.pages.set(it.url, { image: it.image, rating: it.rating, reviewCount: it.reviewCount, productId: it.productId, domain: it.store });
       }
       if (!items.length) return { results: [], hint: "No catalog match — use web_search." };
       return items.slice(0, 12).map(({ productId: _id, ...o }) => o);
@@ -462,7 +467,7 @@ async function execTool(
         const f = o?.url ? ctx.pages.get(o.url) : undefined;
         return f ? { ...o, image: o.image || f.image, rating: o.rating ?? f.rating, reviewCount: o.reviewCount ?? f.reviewCount } : o;
       });
-      const ranked = prepareOffers(rankOffers(raw, ctx.market).map(ground));
+      const ranked = prepareOffers(rankOffers(raw, ctx.market, (u) => ctx.pages.get(u)?.domain).map(ground));
       if (!ranked.length) throw new Error("no valid offers");
       ctx.state.offersShown = true;
       ctx.emit({ type: "block", block: { type: "products", offers: ranked } });
@@ -503,7 +508,7 @@ async function execTool(
       };
     }
     case "request_purchase_approval": {
-      const [ranked] = rankOffers([args as unknown as RawOffer], ctx.market) as Offer[];
+      const [ranked] = rankOffers([args as unknown as RawOffer], ctx.market, (u) => ctx.pages.get(u)?.domain) as Offer[];
       if (!ranked) throw new Error("invalid offer");
       const offer = prepareOffer(ground(ranked));
       if (offer.flags.includes("price_unverified")) {
@@ -519,7 +524,7 @@ async function execTool(
       };
     }
     case "propose_watch": {
-      const [ranked] = rankOffers([args as unknown as RawOffer], ctx.market) as Offer[];
+      const [ranked] = rankOffers([args as unknown as RawOffer], ctx.market, (u) => ctx.pages.get(u)?.domain) as Offer[];
       if (!ranked) throw new Error("invalid offer");
       const offer = prepareOffer(ground(ranked));
       if (offer.flags.includes("price_unverified")) {

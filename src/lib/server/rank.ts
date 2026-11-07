@@ -68,6 +68,13 @@ function webUrl(u?: string): string | undefined {
   }
 }
 
+/** Affiliate/catalog redirect hosts: the link itself doesn't say which store it is. */
+const REDIRECT_HOSTS = ["buy.trychannel3.com"];
+export function isRedirectLink(url?: string): boolean {
+  const d = domainOf(url);
+  return !!d && REDIRECT_HOSTS.includes(d);
+}
+
 function domainOf(url?: string): string | undefined {
   if (!url) return;
   try {
@@ -89,7 +96,11 @@ function median(xs: number[]): number {
  * computed here so it can't be swayed by page content or "sponsored" text.
  *   price 50% · rating 25% (Bayesian-smoothed) · trust 15% · proximity 10%
  */
-export function rankOffers(raw: RawOffer[], market: string): Offer[] {
+/**
+ * @param storeDomainOf server-side lookup of the real store domain for a link
+ *   (catalog redirect links) — only ever filled from trusted catalog data.
+ */
+export function rankOffers(raw: RawOffer[], market: string, storeDomainOf?: (url: string) => string | undefined): Offer[] {
   const valid = raw.filter((r) => r && r.title && isFinite(r.price) && r.price > 0);
   if (!valid.length) return [];
 
@@ -101,7 +112,8 @@ export function rankOffers(raw: RawOffer[], market: string): Offer[] {
 
   const offers: Offer[] = valid.map((r, i) => {
     const total = Math.round((r.price + (r.shipping ?? 0)) * 100) / 100;
-    const domain = domainOf(r.url);
+    const linkDomain = domainOf(r.url);
+    const domain = r.url && isRedirectLink(r.url) ? domainOf(`https://${storeDomainOf?.(r.url) ?? ""}`) : linkDomain;
     const flags: string[] = [];
 
     let trust: TrustLevel =
