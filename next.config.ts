@@ -18,6 +18,15 @@ const nextConfig: NextConfig = {
           { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
         ],
       },
+      {
+        // The guided demo shows the approver's page inside Dalil itself ("Mom's phone").
+        // Same-origin framing only — other sites still can't frame it.
+        source: "/f/:id",
+        headers: [
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+        ],
+      },
     ];
   },
   outputFileTracingIncludes: {

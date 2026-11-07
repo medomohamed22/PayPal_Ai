@@ -8,6 +8,21 @@ import {
   type Settings,
 } from "./types";
 
+/**
+ * The app runs English-only, US-only, on the server's Meta key with one fixed
+ * model — only the spending mandate is the user's to change.
+ */
+const LOCKED = {
+  apiKey: "",
+  baseUrl: DEFAULT_SETTINGS.baseUrl,
+  model: DEFAULT_SETTINGS.model,
+  reasoningEffort: DEFAULT_SETTINGS.reasoningEffort,
+  market: "US",
+  city: "New York",
+  lang: "en",
+  demoMode: false,
+} as const satisfies Partial<Settings>;
+
 interface KV {
   key: string;
   value: unknown;
@@ -42,14 +57,14 @@ export function db(): DalilDB {
 export async function loadSettings(): Promise<Settings> {
   try {
     const row = await db().kv.get("settings");
-    return { ...DEFAULT_SETTINGS, ...((row?.value as Partial<Settings>) ?? {}) };
+    return { ...DEFAULT_SETTINGS, ...((row?.value as Partial<Settings>) ?? {}), ...LOCKED };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
 }
 
 export async function saveSettings(s: Settings): Promise<void> {
-  await db().kv.put({ key: "settings", value: s });
+  await db().kv.put({ key: "settings", value: { ...s, ...LOCKED } });
 }
 
 export async function getKV<T>(key: string): Promise<T | undefined> {

@@ -269,6 +269,20 @@ html[dir="rtl"] .shimmer {
   50% { transform: rotate(18deg); }
 }
 
+/* Guided demo: the element the tour is about to use. */
+.tour-spot {
+  position: relative;
+  z-index: 30;
+  outline: 3px solid var(--fg);
+  outline-offset: 3px;
+  border-radius: 1rem;
+  animation: tour-pulse 1.4s ease-in-out infinite;
+}
+@keyframes tour-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(0 0 0 / 0.18); }
+  50% { box-shadow: 0 0 0 10px rgb(0 0 0 / 0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

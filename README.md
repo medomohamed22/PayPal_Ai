@@ -81,7 +81,7 @@ npm install
 cp .env.example .env.local   # fill in PayPal sandbox keys (others optional)
 npm run dev                   # http://localhost:3000
 ```
-Open **Settings** → paste your Meta Model API key (stored only in your browser's IndexedDB) → **Fetch models** → pick a model → **Save**. Or toggle **Demo mode** to try everything without a key.
+Set `META_API_KEY` in `.env.local` (the agent always runs on the server key with `muse-spark-1.3-contributor`), then open the app and press **Demo** or just type.
 
 ## Deploy on Vercel
 1. Import the repo (production branch `main`; `vercel.json` sets the Next.js preset and the daily cron).
@@ -107,15 +107,22 @@ Open **Settings** → paste your Meta Model API key (stored only in your browser
 4. Vercel Hobby runs the cron once a day, so `.github/workflows/price-watch.yml` (GitHub Actions) calls `/api/cron` **every 10 minutes**. Add a repository secret `CRON_SECRET` (same value as in Vercel); optionally a repository variable `APP_URL`. While the app is open it also checks watches every 30 s.
 
 ## Testing as a judge
-1. Open the app and just type — the real agent runs on a hosted key (limited per day). Or add your own Meta Model API key in **Settings**, or enable **Demo mode** for a scripted run.
-   - For the Channel3 catalog and visual search, switch **Settings → Market** to **United States** and send a product name or photo.
-2. Ask: `buy airpods pro 3` → **Approve with PayPal** → log in with a PayPal **sandbox personal** account → you get the 10-minute hold → **Cancel** or **Confirm now** → **Track order** / **Problem with order?**
-3. Ask: `negotiate airpods pro 3` → **Let Dalil negotiate** → watch the two agents agree → pay the new price → open **Purchases & savings**.
-4. On any approval card tap **Split it with friends** → open the link in another browser to pay a share.
-5. Ask: `watch airpods pro 3 and tell me if it drops under 11500` → **Set up** → open 🔔 → **Simulate price drop** → **Buy now**.
-6. **Price protection:** after any purchase is confirmed, the card shows **Price protection · 14 days**. Tap **Simulate price drop (sandbox)** → the difference is refunded on the PayPal capture within seconds and shows up in the trust receipt and in **Purchases & savings** ("Price-drop refunds").
-7. **Multi-store cart:** ask `put airpods pro 3 and an air fryer in one cart` (or tap the cart icon on any offers you like) → **Approve once with PayPal** → each store paid separately → cancel one store (full refund) and keep the other.
-8. **Family approval:** ask `ask my mom to pay for airpods pro 3` → set a limit → **Create link** → open the link in another browser (or a private window) → **Approve & pay with PayPal** with a second sandbox account → the requester's chat shows it was approved.
+**Fastest: press ▶ Demo** (top bar, or open `/?demo=1`). The guided demo runs every feature on the live PayPal **sandbox** with the real AI — Meta `muse-spark-1.3-contributor` on the server's key — in about 5 minutes:
+
+1. **Real AI search** for Sony WH-1000XM5 (Channel3 catalog + web), signed prices, store trust
+2. **Buy now or wait?** from the price history
+3. **Spending mandate** — a $5 limit makes the server refuse the payment, even though the AI proposed it
+4. **Agent-to-agent negotiation** with the store's seller agent
+5. **Approve with PayPal** — *you click* (browsers only open PayPal from a real click); the sandbox buyer login is shown next to the button
+6. **Hold → capture** and the **trust receipt**
+7. **Price protection** — a simulated drop sends a real partial PayPal refund
+8. **Price watch** — simulated drop → "Price dropped!" alert
+9. **Multi-store cart** — two stores, *one* PayPal approval, then cancel one store (full refund)
+10. **Family approval** — "Mom's phone" opens next to the chat; *you click* Approve & pay as Mom
+11. **Group buy** link
+12. **Purchases & savings**
+
+Or just type: the app is English-only and US-only, the AI always runs on the server's key, and **Settings** only holds your spending limit (max per purchase, verified stores only).
 
 ## Architecture
 - **Next.js 15 (App Router) on Vercel**, Tailwind v4, Framer Motion, Dexie (IndexedDB)

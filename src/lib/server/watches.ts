@@ -371,7 +371,10 @@ export async function watchAction(
   const r = await load(device, id);
   switch (action) {
     case "simulate": {
-      // Demo helper for the video: make the price fall just under the target.
+      // Demo helper: make the price fall just under the target. Sandbox (play money) only.
+      if (process.env.PAYPAL_ENV === "live" && r.source !== "demo") {
+        throw new WatchError("Simulated price drops are only available on the PayPal sandbox", 403, "SANDBOX_ONLY");
+      }
       if (r.status !== "active") throw new WatchError("Watch is not active", 409);
       // The client may suggest a price, but never below the simulation floor.
       const want = params.price && params.price > 0 ? Math.min(params.price, r.targetPrice) : Math.floor(r.targetPrice * 0.97 * 100) / 100;

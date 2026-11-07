@@ -11,13 +11,16 @@ import { kv } from "./store";
  */
 const META_BASE = (!process.env.VERCEL && process.env.DALIL_TEST_MODEL_BASE) /* tests only */ || "https://api.meta.ai/v1";
 
+/** The one model the app runs on (fixed for cost and predictable behaviour). */
+export const HOSTED_MODEL = "muse-spark-1.3-contributor";
+
 export function hostedEnabled(): boolean {
   return !!process.env.META_API_KEY;
 }
 
 export function hostedLimits() {
   return {
-    perVisitor: Number(process.env.HOSTED_DAILY_LIMIT) || 20,
+    perVisitor: Number(process.env.HOSTED_DAILY_LIMIT) || 40,
     global: Number(process.env.HOSTED_GLOBAL_DAILY_LIMIT) || 500,
   };
 }
@@ -26,7 +29,7 @@ export function hostedConfig(reasoningEffort?: string): MetaConfig {
   return {
     baseUrl: META_BASE,
     apiKey: process.env.META_API_KEY ?? "",
-    model: process.env.HOSTED_MODEL || "muse-spark-1.3-contributor",
+    model: HOSTED_MODEL,
     reasoningEffort,
   };
 }

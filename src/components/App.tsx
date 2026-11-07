@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Bell, BellRing, Camera, CircleCheck, Eye, HandCoins, Menu, Package, Zap, Moon, PanelLeft, Plus, Settings2, ShoppingCart, Sun, Trash2, X } from "lucide-react";
+import { Bell, BellRing, Camera, Play, CircleCheck, Eye, HandCoins, Menu, Package, Zap, Moon, PanelLeft, Plus, Settings2, ShoppingCart, Sun, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { db, getKV, loadSettings, requestPersistence, saveSettings, setKV, uid } from "@/lib/db";
 import {
@@ -46,6 +46,7 @@ import Composer, { type ComposerPayload } from "./Composer";
 import Logo from "./Logo";
 import MessageView, { type ApprovalAction } from "./MessageView";
 import SettingsSheet from "./SettingsSheet";
+import DemoTour, { type TourApi } from "./DemoTour";
 import SavingsPanel from "./Savings";
 import { groupApi } from "./Group";
 import { Toasts, WatchesPanel, WatchSheet, type Toast } from "./Watches";
@@ -153,12 +154,22 @@ export default function App() {
   const [storePersistent, setStorePersistent] = useState<boolean | null>(null);
   const [watchesOpen, setWatchesOpen] = useState(false);
   const [savingsOpen, setSavingsOpen] = useState(false);
+  /** Guided demo for judges (also opens with ?demo=1). */
+  const [tourOpen, setTourOpen] = useState(false);
+  const tourApi = useRef<TourApi | null>(null);
+  useEffect(() => {
+    try {
+      if (new URLSearchParams(window.location.search).get("demo") === "1") setTourOpen(true);
+    } catch {}
+  }, []);
   const [watchDraft, setWatchDraft] = useState<{ offer: Offer; targetPrice?: number; mode?: WatchMode } | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   /** Multi-store cart being filled from product cards (kept on this device). */
   const [cart, setCart] = useState<Offer[]>([]);
   /** Server-provided AI key for visitors without their own (rate-limited). */
   const [hosted, setHosted] = useState(false);
+  /** Deployment runs on the PayPal sandbox → show the "simulate a price drop" helpers. */
+  const [sandbox, setSandbox] = useState(false);
   const prevStatus = useRef<Map<string, Watch["status"]>>(new Map());
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -189,18 +200,18 @@ export default function App() {
     requestPersistence();
     fetch("/api/config")
       .then((r) => r.json())
-      .then((c: { hostedAI?: boolean }) => setHosted(!!c.hostedAI))
+      .then((c: { hostedAI?: boolean; sandbox?: boolean }) => {
+        setHosted(!!c.hostedAI);
+        setSandbox(!!c.sandbox);
+      })
       .catch(() => {});
     setDark(document.documentElement.classList.contains("dark"));
   }, []);
 
   useEffect(() => {
     if (!ready) return; // don't overwrite the saved language with the default before settings load
-    document.documentElement.lang = settings.lang;
-    document.documentElement.dir = settings.lang === "ar" ? "rtl" : "ltr";
-    try {
-      localStorage.setItem("dalil-lang", settings.lang);
-    } catch {}
+    document.documentElement.lang = "en";
+    document.documentElement.dir = "ltr";
   }, [settings.lang]);
 
   const toggleTheme = () => {
@@ -269,10 +280,6 @@ export default function App() {
   const send = useCallback(
     async (p: ComposerPayload) => {
       if (busy) return;
-      if (!settings.apiKey && !settings.demoMode && !hosted) {
-        setSettingsOpen(true);
-        return;
-      }
       const cid = await ensureConversation(
         p.text || p.links[0]?.title || (ar ? "بحث بالصورة" : "Photo search"),
         !p.text && !p.links.length && p.images.length ? "camera" : undefined,
@@ -314,7 +321,7 @@ export default function App() {
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-model-api-key": settings.apiKey },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             history,
             settings: {
@@ -999,6 +1006,18 @@ export default function App() {
     await saveSettings(st);
   };
 
+  // What the guided demo may drive (re-bound every render, so it always sees current state).
+  tourApi.current = {
+    newChat,
+    send: (text) => send({ text, images: [], links: [] }),
+    isBusy: () => busy,
+    getMaxSpend: () => settings.maxSpend,
+    setMaxSpend: (v) => onSaveSettings({ ...settings, maxSpend: v }),
+    openWatches: setWatchesOpen,
+    openSavings: setSavingsOpen,
+    clearCart: () => saveCart([]),
+  };
+
   const sidebar = (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between px-3 py-3">
@@ -1089,7 +1108,7 @@ export default function App() {
           <Settings2 className="size-4" />
           {s.settings}
           <span className="ms-auto truncate font-mono text-[10px] text-fg-muted" dir="ltr">
-            {settings.demoMode ? "demo" : !settings.apiKey && hosted ? "hosted" : settings.model}
+            {settings.maxSpend ? `limit $${settings.maxSpend.toLocaleString("en-US")}` : "no limit"}
           </span>
         </button>
       </div>
@@ -1181,6 +1200,14 @@ export default function App() {
               )}
             </AnimatePresence>
             <button
+              onClick={() => setTourOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-[12px] font-semibold hover:bg-bg-soft"
+              aria-label="Run the guided demo"
+            >
+              <Play className="size-3.5 fill-current" />
+              <span>Demo</span>
+            </button>
+            <button
               onClick={() => setWatchesOpen(true)}
               className="relative rounded-lg p-2 text-fg-muted hover:bg-bg-soft hover:text-fg"
               aria-label={ar ? "مراقبة الأسعار" : "Price watches"}
@@ -1194,14 +1221,6 @@ export default function App() {
                   className="absolute end-1 top-1 size-2 rounded-full bg-fg"
                 />
               ) : null}
-            </button>
-            <button
-              onClick={() => onSaveSettings({ ...settings, lang: ar ? "en" : "ar" })}
-              className="rounded-lg px-2 py-1.5 text-[12px] font-semibold text-fg-muted hover:bg-bg-soft hover:text-fg"
-              aria-label={ar ? "Switch to English" : "التحويل للعربي"}
-              title={ar ? "English" : "العربية"}
-            >
-              {ar ? "EN" : "ع"}
             </button>
             <button onClick={toggleTheme} className="rounded-lg p-2 text-fg-muted hover:bg-bg-soft hover:text-fg" aria-label="Theme">
               <AnimatePresence mode="wait" initial={false}>
@@ -1226,9 +1245,10 @@ export default function App() {
               <EmptyState
                 s={s}
                 ready={ready}
-                needsKey={!settings.apiKey && !settings.demoMode && !hosted}
+                needsKey={!hosted}
                 onPick={(text) => setPrefill({ text, n: Date.now() })}
                 onSettings={() => setSettingsOpen(true)}
+                onDemo={() => setTourOpen(true)}
               />
             ) : (
               <div className="space-y-7 pt-4">
@@ -1293,7 +1313,7 @@ export default function App() {
         open={watchesOpen}
         watches={watches}
         lang={settings.lang}
-        demo={settings.demoMode}
+        demo={settings.demoMode || sandbox}
         persistent={storePersistent}
         vaultConnected={vaultConnected}
         onClose={() => setWatchesOpen(false)}
@@ -1306,6 +1326,7 @@ export default function App() {
         }}
       />
       <Toasts toasts={toasts} onDismiss={(id) => setToasts((x) => x.filter((y) => y.id !== id))} />
+      <DemoTour open={tourOpen} onClose={() => setTourOpen(false)} api={tourApi} />
     </div>
   );
 }
@@ -1316,12 +1337,14 @@ function EmptyState({
   needsKey,
   onPick,
   onSettings,
+  onDemo,
 }: {
   s: ReturnType<typeof t>;
   ready: boolean;
   needsKey: boolean;
   onPick: (t: string) => void;
   onSettings: () => void;
+  onDemo: () => void;
 }) {
   return (
     <div className="flex min-h-[calc(100dvh-14rem)] flex-col items-center justify-center py-10 text-center">
@@ -1345,15 +1368,22 @@ function EmptyState({
         {s.emptySub}
       </motion.p>
       {ready && needsKey && (
-        <motion.button
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          onClick={onSettings}
-          className="mt-4 rounded-full border border-line px-3.5 py-1.5 text-xs font-medium hover:bg-bg-soft"
-        >
+        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-4 rounded-full border border-line px-3.5 py-1.5 text-xs font-medium text-danger">
           {s.needKey}
-        </motion.button>
+        </motion.p>
       )}
+      <motion.button
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.18 }}
+        whileTap={{ scale: 0.97 }}
+        onClick={onDemo}
+        className="mt-6 inline-flex items-center gap-2 rounded-full bg-inv-bg px-5 py-2.5 text-sm font-semibold text-inv-fg shadow-card"
+      >
+        <Play className="size-4 fill-current" />
+        Run the guided demo
+        <span className="hidden font-normal opacity-70 sm:inline">· every feature, ~5 min</span>
+      </motion.button>
       <div className="mt-8 grid w-full max-w-xl gap-2 sm:grid-cols-2">
         {s.suggestions.map((q, i) => (
           <motion.button

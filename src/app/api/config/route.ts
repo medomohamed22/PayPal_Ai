@@ -10,6 +10,8 @@ export async function GET() {
     hostedAI: hostedEnabled(),
     hostedDailyLimit: hostedEnabled() ? hostedLimits().perVisitor : 0,
     catalog: channel3Enabled(),
+    /** PayPal sandbox (play money): demo-only helpers such as "simulate a price drop" are allowed. */
+    sandbox: process.env.PAYPAL_ENV !== "live",
     build: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "local",
   });
 }

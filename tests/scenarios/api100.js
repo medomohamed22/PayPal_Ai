@@ -51,10 +51,9 @@ const signedNotNeg = (offers) => offers.filter((o) => o.trust !== 'suspicious' &
     const firstSus = idx.indexOf(true);
     check('func', 'suspicious offers ranked last', firstSus === -1 || idx.slice(firstSus).every(Boolean), idx.join(','));
   });
-  await step('func', 'Arabic Egypt search returns EGP offers + USD charge amount', async () => {
-    eg = await demoChat('عايز ايربودز برو ٣', { settings: { market: 'EG', city: 'Cairo', lang: 'ar' } });
-    const o = eg.offers[0];
-    check('func', 'Arabic Egypt search returns EGP offers + USD charge amount', o && o.currency === 'EGP' && o.chargeCurrency === 'USD' && o.chargeAmount > 0, JSON.stringify(o)?.slice(0, 200));
+  await step('func', 'the app is US-only: a request for another market is served in USD', async () => {
+    eg = await demoChat('airpods pro 3', { settings: { market: 'EG', city: 'Cairo', lang: 'ar' } });
+    check('func', 'the app is US-only: a request for another market is served in USD', eg.offers.length > 0 && eg.offers.every((o) => o.currency === 'USD'), JSON.stringify(eg.offers[0])?.slice(0, 200));
   });
   await step('func', 'barcode in message → lookup step + product', async () => {
     const b = await demoChat('0195950000016');
@@ -78,7 +77,7 @@ const signedNotNeg = (offers) => offers.filter((o) => o.trust !== 'suspicious' &
   });
   await step('func', 'public config exposes only feature flags', async () => {
     const r = await call('GET', '/api/config');
-    check('func', 'public config exposes only feature flags', r.s === 200 && Object.keys(r.j).every((k) => ['hostedAI', 'hostedDailyLimit', 'catalog', 'build'].includes(k)), r.t);
+    check('func', 'public config exposes only feature flags', r.s === 200 && Object.keys(r.j).every((k) => ['hostedAI', 'hostedDailyLimit', 'catalog', 'build', 'sandbox'].includes(k)), r.t);
   });
   await step('func', 'paypal status: sandbox + public client id only', async () => {
     const r = await call('GET', '/api/paypal/status');
@@ -388,9 +387,9 @@ const signedNotNeg = (offers) => offers.filter((o) => o.trust !== 'suspicious' &
       check('sec', `link preview SSRF blocked: ${u}`, !/"title"|"description"|hostedAI|root:/.test(r.t), r.t);
     });
   }
-  await step('sec', 'custom model base URL → cloud metadata IP blocked', async () => {
-    const r = await call('POST', '/api/chat', { history: [{ role: 'user', text: 'hi' }], settings: settings({ baseUrl: 'http://169.254.169.254/v1', demoMode: false }) }, { 'x-model-api-key': 'k' });
-    check('sec', 'custom model base URL → cloud metadata IP blocked', /not allowed|Invalid|blocked/i.test(r.t), r.t);
+  await step('sec', 'a model base URL / key sent by the browser is ignored (server model only)', async () => {
+    const r = await call('POST', '/api/chat', { history: [{ role: 'user', text: 'hi' }], settings: settings({ baseUrl: 'http://169.254.169.254/v1', model: 'evil', demoMode: false }) }, { 'x-model-api-key': 'k' });
+    check('sec', 'a model base URL / key sent by the browser is ignored (server model only)', r.s === 200 && !/169\.254|Host not allowed/.test(r.t) && r.t.includes('"done"'), r.t.slice(0, 300));
   });
   await step('sec', 'model list → loopback blocked', async () => {
     const r = await call('POST', '/api/models', { baseUrl: 'http://127.0.0.1:9001' }, { 'x-model-api-key': 'k' });
@@ -406,9 +405,9 @@ const signedNotNeg = (offers) => offers.filter((o) => o.trust !== 'suspicious' &
     const r = await call('POST', '/api/chat', { history: [{ role: 'user', text: 'x'.repeat(30000) }], settings: settings() });
     check('sec', 'oversized chat message rejected', r.s === 400, r.t);
   });
-  await step('sec', 'invalid market rejected', async () => {
-    const r = await call('POST', '/api/chat', { history: [{ role: 'user', text: 'hi' }], settings: settings({ market: 'XX' }) });
-    check('sec', 'invalid market rejected', r.s === 400, r.t);
+  await step('sec', 'any market value is ignored (always US)', async () => {
+    const r = await demoChat('airpods pro 3', { settings: { market: 'XX', lang: 'zz' } });
+    check('sec', 'any market value is ignored (always US)', r.r.s === 200 && r.offers.length > 0 && r.offers.every((o) => o.currency === 'USD'), r.r.t.slice(0, 200));
   });
   await step('sec', 'more than 4 images rejected', async () => {
     const r = await call('POST', '/api/chat', { history: [{ role: 'user', text: 'hi', images: ['a', 'b', 'c', 'd', 'e'] }], settings: settings() });
@@ -472,9 +471,9 @@ const signedNotNeg = (offers) => offers.filter((o) => o.trust !== 'suspicious' &
     const r = await call('POST', '/api/paypal/cart', { offers: forged, mandate: { maxSpend: 0, verifiedOnly: false } });
     check('cart', 'cart: a tampered price is refused', r.s === 400, r.t);
   });
-  await step('cart', 'cart: mixing USD and EGP offers is refused', async () => {
-    const r = await call('POST', '/api/paypal/cart', { offers: [twoStores[0], signedNotNeg(eg.offers)[0]], mandate: { maxSpend: 0, verifiedOnly: false } });
-    check('cart', 'cart: mixing USD and EGP offers is refused', r.s >= 400 && r.s < 500, r.t);
+  await step('cart', 'cart: an offer re-labelled to another currency is refused', async () => {
+    const r = await call('POST', '/api/paypal/cart', { offers: [twoStores[0], { ...twoStores[1], currency: 'EGP' }], mandate: { maxSpend: 0, verifiedOnly: false } });
+    check('cart', 'cart: an offer re-labelled to another currency is refused', r.s >= 400 && r.s < 500, r.t);
   });
   await step('cart', 'cart: a suspicious store cannot be added', async () => {
     if (!suspicious) return check('cart', 'cart: a suspicious store cannot be added', true);

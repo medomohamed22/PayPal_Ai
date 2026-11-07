@@ -20,7 +20,7 @@
  {
   "n": 4,
   "cat": "func",
-  "name": "Arabic Egypt search returns EGP offers + USD charge amount",
+  "name": "the app is US-only: a request for another market is served in USD",
   "ok": true
  },
  {
@@ -512,7 +512,7 @@
  {
   "n": 86,
   "cat": "sec",
-  "name": "custom model base URL → cloud metadata IP blocked",
+  "name": "a model base URL / key sent by the browser is ignored (server model only)",
   "ok": true
  },
  {
@@ -536,7 +536,7 @@
  {
   "n": 90,
   "cat": "sec",
-  "name": "invalid market rejected",
+  "name": "any market value is ignored (always US)",
   "ok": true
  },
  {
@@ -620,7 +620,7 @@
  {
   "n": 104,
   "cat": "cart",
-  "name": "cart: mixing USD and EGP offers is refused",
+  "name": "cart: an offer re-labelled to another currency is refused",
   "ok": true
  },
  {

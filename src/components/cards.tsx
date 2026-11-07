@@ -644,6 +644,9 @@ export function ProductCards({
           return (
             <motion.div
               key={o.id}
+              data-offer-card={o.id}
+              data-store={o.store}
+              data-trust={o.trust}
               initial={{ opacity: 0, y: 14, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ delay: i * 0.06, type: "spring", stiffness: 260, damping: 24 }}
@@ -1040,6 +1043,8 @@ export function ApprovalCard({
   const converted = offer.chargeCurrency && offer.chargeCurrency !== offer.currency && offer.chargeAmount != null;
   return (
     <motion.div
+      data-approval-card={offer.id}
+      data-status={status}
       initial={{ opacity: 0, y: 16, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ type: "spring", stiffness: 240, damping: 22 }}

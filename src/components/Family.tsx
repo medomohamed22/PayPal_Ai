@@ -12,10 +12,28 @@ import Logo from "./Logo";
 
 /* ---------------- API ---------------- */
 
+/**
+ * The guided demo shows the approver's side in an embedded frame named
+ * "dalil-demo-approver" — give it its own identity, like a second phone.
+ */
+async function familyDevice(): Promise<string> {
+  if (typeof window !== "undefined" && window.name === "dalil-demo-approver") {
+    try {
+      let id = sessionStorage.getItem("dalil-demo-approver");
+      if (!id) {
+        id = Array.from(crypto.getRandomValues(new Uint8Array(24)), (x) => x.toString(16).padStart(2, "0")).join("");
+        sessionStorage.setItem("dalil-demo-approver", id);
+      }
+      return id;
+    } catch {}
+  }
+  return deviceId();
+}
+
 async function call<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
-    headers: { "Content-Type": "application/json", "x-device-id": await deviceId() },
+    headers: { "Content-Type": "application/json", "x-device-id": await familyDevice() },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const j = await res.json().catch(() => ({}));
@@ -237,19 +255,14 @@ export function FamilyMini({ id, lang }: { id: string; lang: Lang }) {
 /* ---------------- Approver page (/f/[id]) ---------------- */
 
 export function FamilyPage({ id }: { id: string }) {
-  const [lang, setLang] = useState<Lang>("en");
-  const ar = lang === "ar";
+  const lang: Lang = "en";
+  const ar = false as boolean;
   const { req: r, setReq, error } = useFamily(id);
   const [busy, setBusy] = useState<"" | "pay" | "confirm" | "decline" | "cancel" | "capture">("");
   const [msg, setMsg] = useState("");
   const pending = useRef<string | null>(null);
   const now = useTick(r?.status === "held");
 
-  useEffect(() => {
-    try {
-      if (localStorage.getItem("dalil-lang") === "ar") setLang("ar");
-    } catch {}
-  }, []);
   useEffect(() => {
     document.documentElement.lang = lang;
     document.documentElement.dir = ar ? "rtl" : "ltr";
@@ -329,18 +342,6 @@ export function FamilyPage({ id }: { id: string }) {
         <Logo size={30} />
         <span className="text-[15px] font-semibold">{ar ? "دليل" : "Dalil"}</span>
         <span className="text-[13px] text-fg-muted">· {ar ? "موافقة العيلة" : "Family approval"}</span>
-        <button
-          onClick={() => {
-            const l = ar ? "en" : "ar";
-            setLang(l);
-            try {
-              localStorage.setItem("dalil-lang", l);
-            } catch {}
-          }}
-          className="ms-auto rounded-full border border-line px-2.5 py-1 text-[11px] font-semibold"
-        >
-          {ar ? "EN" : "ع"}
-        </button>
       </header>
 
       <main className="mx-auto max-w-md space-y-4 px-4 pb-10">
