@@ -232,9 +232,10 @@ export interface CartUnitInput {
 }
 
 /**
- * One PayPal order with one purchase unit per store. The buyer approves once;
- * each store's unit gets its own authorization (hold), so each can be
- * captured or voided on its own.
+ * One PayPal order with one purchase unit per store. The buyer approves once.
+ * PayPal only accepts several purchase units with intent=CAPTURE (AUTHORIZE is
+ * refused for multi-unit orders), so each store's unit is captured on its own and
+ * any store can be cancelled within the cancel window by refunding its capture.
  */
 export async function createCartOrder(input: {
   cartId: string;
@@ -277,7 +278,7 @@ export async function createCartOrder(input: {
     method: "POST",
     requestId: `dalil-cart-${input.cartId}`.slice(0, 108),
     body: {
-      intent: "AUTHORIZE",
+      intent: "CAPTURE",
       purchase_units,
       payment_source: {
         paypal: {
@@ -346,6 +347,7 @@ type OrderJson = {
         amount: { value: string; currency_code: string };
         expiration_time?: string;
       }>;
+      captures?: Array<{ id: string; status: string; amount: { value: string; currency_code: string } }>;
     };
   }>;
 };
@@ -399,6 +401,41 @@ export async function authorizeOrder(orderId: string): Promise<Authorized> {
     // Idempotency: if it was already authorized, return the existing hold.
     if (e instanceof PayPalError && e.code === "ORDER_ALREADY_AUTHORIZED") {
       return toAuthorized(await pp<OrderJson>(`/v2/checkout/orders/${pid(orderId)}`));
+    }
+    throw e;
+  }
+}
+
+export interface CartCaptured {
+  orderId: string;
+  shipping: ShippingInfo;
+  payerEmail?: string;
+  units: Array<{ referenceId: string; captureId: string; status: string; amount: { value: string; currency: string } }>;
+}
+
+function toCartCaptured(o: OrderJson): CartCaptured {
+  const units = (o.purchase_units ?? []).flatMap((u, i) => {
+    const c = u.payments?.captures?.[0];
+    return c ? [{ referenceId: u.reference_id ?? String(i), captureId: c.id, status: c.status, amount: { value: c.amount.value, currency: c.amount.currency_code } }] : [];
+  });
+  if (!units.length) throw new PayPalError("Order has no captures", 409, "NO_CAPTURE");
+  return { orderId: o.id, shipping: formatShipping(o), payerEmail: o.payment_source?.paypal?.email_address ?? o.payer?.email_address, units };
+}
+
+/** Multi-store cart: buyer approved → capture every store's purchase unit (one capture each). */
+export async function captureCartOrder(orderId: string): Promise<CartCaptured> {
+  if (!/^[A-Z0-9]{10,25}$/.test(orderId)) throw new PayPalError("Invalid order id", 400, "INVALID_ORDER_ID");
+  try {
+    const o = await pp<OrderJson>(`/v2/checkout/orders/${pid(orderId)}/capture`, {
+      method: "POST",
+      body: {},
+      requestId: `dalil-cartcap-${orderId}`,
+    });
+    return toCartCaptured(o);
+  } catch (e) {
+    // Idempotency: an order that was already captured returns its captures.
+    if (e instanceof PayPalError && e.code === "ORDER_ALREADY_CAPTURED") {
+      return toCartCaptured(await pp<OrderJson>(`/v2/checkout/orders/${pid(orderId)}`));
     }
     throw e;
   }

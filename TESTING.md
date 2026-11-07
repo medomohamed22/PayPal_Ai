@@ -22,7 +22,7 @@ Scripts: API + attacks (`api100.js`), browser UI (`ui100.js`, Playwright), real 
 
 ## Price protection, multi-store cart and family approval
 
-Added with these three features: 34 more API scenarios (local build with the PayPal stand-in, which now models captures, partial refunds and multi-unit orders). The whole API suite passes **142 / 142** locally, the earlier scenarios included.
+Added with these three features: 34 more API scenarios (local build with the PayPal stand-in, which now models captures, partial refunds and multi-unit orders). The whole API suite passes **146 / 146** locally, the earlier scenarios included. The PayPal stand-in also refuses an `AUTHORIZE` order with several purchase units, as the real sandbox does.
 
 Run: start `mock-paypal.js` and `mock-meta.js`, build, then `BASE=http://localhost:3100 node tests/scenarios/api100.js`.
 
@@ -45,9 +45,12 @@ Run: start `mock-paypal.js` and `mock-meta.js`, build, then `BASE=http://localho
 | family | family: only the approver can confirm the charge | ✅ |
 | family | family: approver confirms → captured | ✅ |
 | family | family: requester can cancel a pending request | ✅ |
-| cart | cart: one approval → one hold per store | ✅ |
-| cart | cart: cancel one store, pay the other | ✅ |
-| cart | cart: one store's hold token can't capture another store | ✅ |
+| cart | cart: the cart order is a CAPTURE order (PayPal refuses AUTHORIZE with several stores) | ✅ |
+| cart | cart: paying without the order token is refused | ✅ |
+| cart | cart: one approval → one capture per store | ✅ |
+| cart | cart: paying twice returns the same captures | ✅ |
+| cart | cart: cancelling one store refunds exactly that store | ✅ |
+| cart | cart: one store's capture token can't refund another store | ✅ |
 | protect | protection: turned on for a captured purchase | ✅ |
 | protect | protection: same purchase twice returns the same record | ✅ |
 | protect | protection: another device cannot take over the purchase | ✅ |

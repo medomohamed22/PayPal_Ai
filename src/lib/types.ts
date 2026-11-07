@@ -384,7 +384,10 @@ export interface CartUnit {
   holdToken?: string;
   captureId?: string;
   captureToken?: string;
-  status: "pending" | "held" | "captured" | "voided" | "error";
+  /** Refund issued when the store was cancelled within the cancel window. */
+  refundId?: string;
+  /** "captured" = paid; within the cancel window it can still be refunded in full. */
+  status: "pending" | "held" | "captured" | "refunded" | "voided" | "error";
   message?: string;
 }
 

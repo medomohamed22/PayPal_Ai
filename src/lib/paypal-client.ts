@@ -102,6 +102,21 @@ export function createCart(offers: Offer[], mandate: Mandate) {
   }>("/api/paypal/cart", { offers, mandate });
 }
 
+/** Multi-store cart approved → capture every store's part (one capture per store). */
+export function captureCart(orderId: string, orderToken?: string) {
+  return post<{
+    orderId: string;
+    shipping: { name?: string; address?: string };
+    payerEmail?: string;
+    units: Array<{ referenceId: string; captureId: string; status: string; amount: { value: string; currency: string }; captureToken: string }>;
+  }>("/api/paypal/cart/capture", { orderId, orderToken });
+}
+
+/** Refund one capture in full (order problem, or a store cancelled within the window). */
+export function refundCapture(captureId: string, captureToken: string | undefined, reason: "not_received" | "damaged" | "not_as_described" | "cancelled") {
+  return post<{ id: string; status: string; amount?: string; currency?: string }>("/api/paypal/refund", { captureId, captureToken, reason });
+}
+
 export function capture(authorizationId: string, holdToken?: string) {
   return post<{ id: string; status: string; captureToken: string }>("/api/paypal/capture", { authorizationId, holdToken });
 }

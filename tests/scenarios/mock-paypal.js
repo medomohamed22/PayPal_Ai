@@ -23,6 +23,9 @@ http.createServer((req, res) => {
     }
     if (u === '/v2/checkout/orders' && req.method === 'POST') {
       const b = JSON.parse(body); const oid = id('ORD');
+      // Like the real API: several purchase units are only accepted with intent=CAPTURE.
+      if (b.purchase_units.length > 1 && b.intent !== 'CAPTURE')
+        return send(422, { name: 'UNPROCESSABLE_ENTITY', details: [{ issue: 'UNSUPPORTED_INTENT', description: '`intent=AUTHORIZE` is not supported for this operation. Only `intent=CAPTURE` is supported.' }] });
       const it = b.purchase_units[0].items[0];
       if ((it.image_url && !/^https:\/\/[\w\-./%]+\.(jpe?g|png|gif)$/i.test(it.image_url)) || (it.url && it.url.includes('reject-me')))
         return send(400, { name: 'INVALID_REQUEST', details: [{ issue: 'INVALID_PARAMETER_SYNTAX', description: 'The value of a field does not conform to the expected format.' }] });
@@ -45,6 +48,15 @@ http.createServer((req, res) => {
     if ((m = u.match(/^\/v2\/checkout\/orders\/(\w+)$/)) && req.method === 'GET') {
       const o = orders[m[1]]; if (!o) return send(404, { name: 'RESOURCE_NOT_FOUND' });
       return send(200, { id: m[1], status: o.status, purchase_units: o.b.purchase_units.map((pu) => ({ reference_id: pu.reference_id, amount: pu.amount })) });
+    }
+    if ((m = u.match(/^\/v2\/checkout\/orders\/(\w+)\/capture$/))) {
+      const o = orders[m[1]]; if (!o) return send(404, { name: 'RESOURCE_NOT_FOUND' });
+      if (o.b.intent !== 'CAPTURE') return send(422, { name: 'UNPROCESSABLE_ENTITY', details: [{ issue: 'ACTION_DOES_NOT_MATCH_INTENT' }] });
+      if (!o.captured) o.captured = o.b.purchase_units.map((pu) => { const cid = id('CAP'); captures[cid] = { amount: pu.amount, refunded: 0, ref: pu.reference_id }; return { reference_id: pu.reference_id, cid, amount: pu.amount }; });
+      o.status = 'COMPLETED';
+      return send(201, { id: m[1], status: 'COMPLETED', payment_source: { paypal: { email_address: 'buyer@personal.example.com' } },
+        purchase_units: o.captured.map((c) => ({ reference_id: c.reference_id, shipping: { name: { full_name: 'Mohamed Test' }, address: { address_line_1: '12 Tahrir St', admin_area_2: 'Cairo', country_code: 'EG' } },
+          payments: { captures: [{ id: c.cid, status: 'COMPLETED', amount: c.amount }] } })) });
     }
     if ((m = u.match(/^\/v2\/checkout\/orders\/(\w+)\/track$/))) { const b = JSON.parse(body); orders[m[1]].tracking = b; return send(201, { id: m[1], status: 'COMPLETED' }); }
     if ((m = u.match(/^\/v2\/payments\/captures\/(\w+)\/refund$/))) {

@@ -10,13 +10,14 @@ export const runtime = "nodejs";
 const Body = z.object({
   captureId: z.string(),
   captureToken: z.string(),
-  reason: z.enum(["not_received", "damaged", "not_as_described"]),
+  reason: z.enum(["not_received", "damaged", "not_as_described", "cancelled"]),
 });
 
 const NOTE: Record<z.infer<typeof Body>["reason"], string> = {
   not_received: "Refund from Dalil: item not received.",
   damaged: "Refund from Dalil: item arrived damaged.",
   not_as_described: "Refund from Dalil: item not as described.",
+  cancelled: "Refund from Dalil: you cancelled this store within the cancel window.",
 };
 
 /** Order problem → refund the captured payment through PayPal. */

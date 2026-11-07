@@ -22,7 +22,7 @@ Shopping agents (Grok, ChatGPT, Perplexity, Google, Amazon) race to "buy faster"
 | 🤝 Agent-to-agent negotiation | Dalil's buyer agent haggles with the store's seller agent over HTTP (`/api/seller-agent`, `dalil-negotiation/1`), cites cheaper competitors, and returns a newly **signed** offer at the agreed price |
 | ⏳ Buy now or wait? | Deterministic verdict from price history (Channel3 + prices Dalil records) and the sales calendar (11.11, White/Black Friday, Ramadan…), with a one-tap watch at the suggested target |
 | 🛡️ Price protection after the purchase | For **14 days** after a purchase Dalil keeps checking the price. If it drops, the difference goes back automatically as a **partial PayPal refund** on the original capture (Payments v2 `/captures/{id}/refund` with an `amount`) — no claim, no form. The protected price is read back from PayPal's capture, each refund is capped by what's left on it, and refunds are idempotent per price level |
-| 🛒 Multi-store cart, one approval | Add items from different stores to one cart → **one PayPal order with one `purchase_unit` per store** → one approval, one hold per store. Each store can be cancelled (void) or confirmed (capture) on its own within the 10-minute window. Same signed-offer and mandate checks on the whole cart |
+| 🛒 Multi-store cart, one approval | Add items from different stores to one cart → **one PayPal order with one `purchase_unit` per store** → one approval, one capture per store. PayPal accepts several purchase units only with `intent: CAPTURE`, so each store is paid on its own and any store can be cancelled within 10 minutes for a **full refund of that store's capture**. Same signed-offer and mandate checks on the whole cart |
 | 👪 Family approval | Dalil drafts the purchase, you set a spending limit and send a link; a parent or partner **approves and pays from their own PayPal**. Your browser can't approve your own request, and the signature and limit are checked again when money moves; their funds are held 10 minutes so they can still cancel |
 | 👥 Group buy | Split a purchase 2–6 ways via a share link: each share is a PayPal **hold**; all are captured only when everyone has paid, voided on cancel/expiry |
 | 🧾 Trust receipt + savings | After each purchase: why this offer, what was compared, which guarantees were enforced. "Purchases & savings" dashboard with an **AG Grid** table |
@@ -32,7 +32,7 @@ Shopping agents (Grok, ChatGPT, Perplexity, Google, Amazon) race to "buy faster"
 ## PayPal APIs used
 - **OAuth 2.0** client credentials
 - **Orders v2**: create (`AUTHORIZE`, `shipping_preference: GET_FROM_FILE`, `user_action: PAY_NOW`), authorize, **track**
-- **Orders v2 with several `purchase_units`**: one order for a multi-store cart (one authorization per store)
+- **Orders v2 with several `purchase_units`**: one `CAPTURE` order for a multi-store cart (one capture per store)
 - **Payments v2**: capture, void, refund (full, and **partial** for price protection), get capture details
 - **Vault v3**: setup tokens → payment tokens (save PayPal for auto-buy, no purchase needed), `vault_id` merchant-initiated orders
 
@@ -56,8 +56,8 @@ full refund for an order problem ─► protection ends
 ## How a multi-store cart works
 ```
 cart (≤10 signed offers, one currency) ─► POST /api/paypal/cart   verify every signature + mandate on the total
-   ─► Orders v2 AUTHORIZE with one purchase_unit per store ─► one PayPal approval
-   ─► authorize ─► one hold per store ─► capture or void each store within 10 minutes
+   ─► Orders v2 CAPTURE with one purchase_unit per store ─► one PayPal approval
+   ─► POST /api/paypal/cart/capture ─► one capture per store ─► cancel a store within 10 minutes = full refund of its capture
 ```
 
 ## How family approval works
@@ -114,7 +114,7 @@ Open **Settings** → paste your Meta Model API key (stored only in your browser
 4. On any approval card tap **Split it with friends** → open the link in another browser to pay a share.
 5. Ask: `watch airpods pro 3 and tell me if it drops under 11500` → **Set up** → open 🔔 → **Simulate price drop** → **Buy now**.
 6. **Price protection:** after any purchase is confirmed, the card shows **Price protection · 14 days**. Tap **Simulate price drop (sandbox)** → the difference is refunded on the PayPal capture within seconds and shows up in the trust receipt and in **Purchases & savings** ("Price-drop refunds").
-7. **Multi-store cart:** ask `put airpods pro 3 and an air fryer in one cart` (or tap the cart icon on any offers you like) → **Approve once with PayPal** → one hold per store → cancel one store and confirm the other.
+7. **Multi-store cart:** ask `put airpods pro 3 and an air fryer in one cart` (or tap the cart icon on any offers you like) → **Approve once with PayPal** → each store is paid separately → cancel one store within 10 minutes and it is refunded in full.
 8. **Family approval:** ask `ask my mom to pay for airpods pro 3` → set a limit → **Create link** → open the link in another browser (or a private window) → **Approve & pay with PayPal** with a second sandbox account → the requester's chat shows it was approved.
 
 ## Architecture
