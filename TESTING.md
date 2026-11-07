@@ -265,3 +265,8 @@ Model: `muse-spark-1.3-contributor` (server key). Script: `tests/scenarios/featu
 | A misread live price could refund up to the whole payment | Live drops >50% are recorded, never auto-refunded |
 | Family: anyone who learned the PayPal order id could complete the approval from their device | Only the device that started the payment can confirm it |
 | Demo cart put both items in one store ("Approve 1 store", "1 stores") | Picks a second store within 15% of the best price; singular/plural fixed |
+
+### Guided judge demo (live site, real model + real PayPal Sandbox)
+
+157. ✅ `tests/scenarios/tour.js` plays the judge on the live site: all 12 steps in 2 min 43 s — real `muse-spark-1.3-contributor` search (Macy's, Best Buy…), $5 mandate block, negotiation, PayPal hold → capture, price-protection refund, price watch, two-store cart with one approval + one store refunded, family approval paid from "Mom's phone", group buy link, savings. 3 PayPal approvals by the "judge", 0 page errors.
+158. ✅ API + attack suite on the live site after the English/US-only change: 113/113 · locally 145/145

@@ -198,7 +198,7 @@ export default function DemoTour({ open, onClose, api }: { open: boolean; onClos
         a.newChat();
         a.clearCart();
         await sleep(500);
-        say(0, `Dalil asks Meta's ${cfg?.model ?? "muse-spark"} model to shop for: “${QUERY}”. It searches the Channel3 catalog and the web, checks prices on store pages and ranks offers by total cost, rating and store trust.`);
+        say(0, `Dalil asks Meta's ${cfg?.model ?? "muse-spark-1.3-contributor"} model to shop for: “${QUERY}”. It searches the Channel3 catalog and the web, checks prices on store pages and ranks offers by total cost, rating and store trust.`);
         await a.send(QUERY);
         await waitFor(() => !api.current!.isBusy() && offerCards().length > 0, 240_000, "the AI's results");
         if (verifiedCards().length < 2) throw new Error("The AI found fewer than 2 offers from verified stores — run the demo again.");
