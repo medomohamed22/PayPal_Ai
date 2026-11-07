@@ -84,6 +84,11 @@ export async function setPushSubscription(device: string, sub: PushSubscription 
   else await kv.del(K.push(device));
 }
 
+/** Push a notification to a device's browser (no-op when it never enabled push). */
+export async function notifyDevice(device: string, payload: Parameters<typeof sendPush>[1]) {
+  return notify(device, payload);
+}
+
 async function notify(device: string, payload: Parameters<typeof sendPush>[1]) {
   const sub = await kv.get<PushSubscription>(K.push(device));
   if (!sub) return;
@@ -176,19 +181,24 @@ async function currentPrice(r: WatchRecord): Promise<number | null> {
     return p;
   }
   if (!r.url) return null;
+  return fetchLivePrice(r.url, r.currency);
+}
+
+/** Live price of a product page (Channel3 for US, otherwise the store page itself). */
+export async function fetchLivePrice(url: string, currency: string): Promise<number | null> {
   // US products: Channel3 returns the live price even for sites that block scrapers.
-  if (channel3Enabled() && r.currency.toUpperCase() === "USD") {
+  if (channel3Enabled() && currency.toUpperCase() === "USD") {
     try {
-      const hit = await lookupPrice(r.url);
+      const hit = await lookupPrice(url);
       if (hit && hit.currency.toUpperCase() === "USD") return hit.price;
     } catch {
       /* fall back to browsing */
     }
   }
-  const page = await browse(r.url);
+  const page = await browse(url);
   const p = page.product.price;
   if (p == null || !(p > 0)) return null;
-  if (page.product.currency && page.product.currency.toUpperCase() !== r.currency.toUpperCase()) return null;
+  if (page.product.currency && page.product.currency.toUpperCase() !== currency.toUpperCase()) return null;
   return p;
 }
 

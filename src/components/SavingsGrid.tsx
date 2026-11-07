@@ -19,6 +19,8 @@ export interface PurchaseRow {
   currency: string;
   saved: number;
   negotiated: number;
+  /** Paid back by price protection (offer currency). */
+  priceDrop?: number;
   status: "captured" | "held" | "refunded";
   orderId?: string;
 }

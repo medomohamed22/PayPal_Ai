@@ -25,6 +25,7 @@ import {
   BellPlus,
   PackageSearch,
   ScanBarcode,
+  ShoppingCart,
   MousePointerClick,
   Handshake,
   AppWindow,
@@ -36,7 +37,9 @@ import PayLaterMessage from "./PayLater";
 import { NegotiationPanel } from "./Negotiation";
 import { TrustReceipt } from "./Receipt";
 import { GroupMini, GroupStarter } from "./Group";
-import type { ApprovalStatus, Block, Lang, LinkPreview, Negotiation, Offer, PurchaseContext, Step } from "@/lib/types";
+import { FamilyMini, FamilyStarter } from "./Family";
+import { PriceProtectionPanel } from "./Protection";
+import type { ApprovalStatus, Block, Lang, LinkPreview, Negotiation, Offer, Protection, PurchaseContext, Step } from "@/lib/types";
 
 /* ---------- Image with graceful fallback ---------- */
 
@@ -612,6 +615,8 @@ export function ProductCards({
   lang,
   onBuy,
   onWatch,
+  onAddToCart,
+  inCart,
   disabled,
   city,
 }: {
@@ -620,6 +625,8 @@ export function ProductCards({
   lang: Lang;
   onBuy?: (o: Offer) => void;
   onWatch?: (o: Offer) => void;
+  onAddToCart?: (o: Offer) => void;
+  inCart?: (o: Offer) => boolean;
   disabled?: boolean;
   city?: string;
 }) {
@@ -749,6 +756,20 @@ export function ProductCards({
                       className="flex shrink-0 items-center justify-center rounded-xl border border-line px-2.5 transition-colors hover:bg-bg-soft"
                     >
                       <BellPlus className="size-3.5" />
+                    </motion.button>
+                  )}
+                  {onAddToCart && o.trust !== "suspicious" && !o.flags.includes("price_unverified") && (
+                    <motion.button
+                      whileTap={{ scale: 0.9 }}
+                      onClick={() => onAddToCart(o)}
+                      title={inCart?.(o) ? (lang === "ar" ? "في السلة" : "In cart") : lang === "ar" ? "ضيف للسلة" : "Add to cart"}
+                      aria-label={inCart?.(o) ? (lang === "ar" ? "في السلة" : "In cart") : lang === "ar" ? "ضيف للسلة" : "Add to cart"}
+                      aria-pressed={inCart?.(o) ?? false}
+                      className={`flex shrink-0 items-center justify-center rounded-xl border px-2.5 transition-colors ${
+                        inCart?.(o) ? "border-fg bg-inv-bg text-inv-fg" : "border-line hover:bg-bg-soft"
+                      }`}
+                    >
+                      {inCart?.(o) ? <Check className="size-3.5" /> : <ShoppingCart className="size-3.5" />}
                     </motion.button>
                   )}
                   {onBuy && o.trust !== "suspicious" && (
@@ -969,9 +990,22 @@ export function ApprovalCard({
   captureId,
   groupId,
   onGroup,
+  protection,
+  captureToken,
+  familyId,
+  suggest,
+  demo,
+  onPatch,
 }: {
   groupId?: string;
   onGroup?: (shares: number) => Promise<void>;
+  protection?: Protection;
+  captureToken?: string;
+  familyId?: string;
+  suggest?: "family";
+  demo?: boolean;
+  /** Persist a change to this approval block (protection state, family request id). */
+  onPatch?: (patch: { protection?: Protection; familyId?: string }) => Promise<void> | void;
   context?: PurchaseContext;
   mandate?: { maxSpend: number; verifiedOnly: boolean };
   orderId?: string;
@@ -1107,17 +1141,22 @@ export function ApprovalCard({
               )}
               {groupId ? (
                 <GroupMini id={groupId} lang={lang} />
-              ) : onGroup && offer.trust !== "suspicious" && negotiation?.status !== "running" ? (
+              ) : familyId ? null : onGroup && offer.trust !== "suspicious" && negotiation?.status !== "running" ? (
                 <GroupStarter lang={lang} onCreate={onGroup} />
               ) : null}
-              {!groupId && (
+              {familyId ? (
+                <FamilyMini id={familyId} lang={lang} />
+              ) : !groupId && onPatch && offer.trust !== "suspicious" && negotiation?.status !== "running" ? (
+                <FamilyStarter lang={lang} offer={offer} initialOpen={suggest === "family"} onCreated={(id) => onPatch({ familyId: id })} />
+              ) : null}
+              {!groupId && !familyId && (
                 <PayLaterMessage
                   amount={offer.chargeAmount ?? offer.total}
                   currency={offer.chargeCurrency ?? offer.currency}
                   lang={lang}
                 />
               )}
-              {!groupId && (
+              {!groupId && !familyId && (
               <motion.button
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.97 }}
@@ -1207,6 +1246,18 @@ export function ApprovalCard({
                   orderId={orderId}
                   captureId={captureId}
                   refunded={!!refund}
+                  protection={protection}
+                />
+              )}
+              {status === "captured" && !refund && onPatch && (
+                <PriceProtectionPanel
+                  lang={lang}
+                  offer={offer}
+                  captureId={captureId}
+                  captureToken={captureToken}
+                  demo={!!demo}
+                  protection={protection}
+                  onUpdate={(p) => onPatch({ protection: p })}
                 />
               )}
               {status === "captured" && (

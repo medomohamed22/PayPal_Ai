@@ -18,11 +18,15 @@ export interface PendingCheckout {
   idx: number;
   orderId: string;
   orderToken?: string;
+  /** A multi-store cart (one order, one hold per store). */
+  kind?: "cart";
 }
 
 export interface HoldRecord {
   msgId: string;
   idx: number;
+  /** Store index inside a multi-store cart block. */
+  unit?: number;
   authorizationId: string;
   holdToken?: string;
   captureAt: number;
@@ -81,7 +85,21 @@ export function authorize(orderId: string, orderToken?: string) {
     payerEmail?: string;
     vaultId?: string;
     holdToken: string;
+    units: Array<{ referenceId: string; authorizationId: string; status: string; amount: { value: string; currency: string }; holdToken: string }>;
   }>("/api/paypal/authorize", { orderId, orderToken });
+}
+
+/** Multi-store cart: one PayPal order with one purchase unit per store. */
+export function createCart(offers: Offer[], mandate: Mandate) {
+  return post<{
+    id: string;
+    approveUrl: string;
+    orderToken: string;
+    charge: { value: string; currency: string };
+    total: number;
+    currency: string;
+    units: Array<{ referenceId: string; store: string; shipping: number; items: string[]; charge?: string }>;
+  }>("/api/paypal/cart", { offers, mandate });
 }
 
 export function capture(authorizationId: string, holdToken?: string) {

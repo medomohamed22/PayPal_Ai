@@ -20,6 +20,51 @@ Scripts: API + attacks (`api100.js`), browser UI (`ui100.js`, Playwright), real 
 | 10 | Bug | Reload opened an empty chat — a payment on hold disappeared from view | Last conversation reopens after reload |
 | 11 | Bug | Malformed JSON returned 500 | Returns 400 |
 
+## Price protection, multi-store cart and family approval
+
+Added with these three features: 34 more API scenarios (local build with the PayPal stand-in, which now models captures, partial refunds and multi-unit orders). The whole API suite passes **142 / 142** locally, the earlier scenarios included.
+
+Run: start `mock-paypal.js` and `mock-meta.js`, build, then `BASE=http://localhost:3100 node tests/scenarios/api100.js`.
+
+| Area | Scenario | Result |
+|---|---|---|
+| cart | cart: one PayPal order with one purchase unit per store | ✅ |
+| cart | cart: total over the spending limit is blocked | ✅ |
+| cart | cart: a tampered price is refused | ✅ |
+| cart | cart: mixing USD and EGP offers is refused | ✅ |
+| cart | cart: a suspicious store cannot be added | ✅ |
+| cart | cart: the same offer twice is refused | ✅ |
+| family | family: request created for a signed offer within the limit | ✅ |
+| family | family: request above the limit is refused | ✅ |
+| family | family: tampered offer is refused | ✅ |
+| family | family: the requester cannot approve their own request | ✅ |
+| family | family: approver gets a PayPal approval link | ✅ |
+| family | family: approver view hides nothing it needs, requester view masks | ✅ |
+| family | family: confirm with a different order id is refused | ✅ |
+| family | family: approval places a hold on the approver's PayPal | ✅ |
+| family | family: only the approver can confirm the charge | ✅ |
+| family | family: approver confirms → captured | ✅ |
+| family | family: requester can cancel a pending request | ✅ |
+| cart | cart: one approval → one hold per store | ✅ |
+| cart | cart: cancel one store, pay the other | ✅ |
+| cart | cart: one store's hold token can't capture another store | ✅ |
+| protect | protection: turned on for a captured purchase | ✅ |
+| protect | protection: same purchase twice returns the same record | ✅ |
+| protect | protection: another device cannot take over the purchase | ✅ |
+| protect | protection: forged capture token refused | ✅ |
+| protect | protection: a cheaper offer can't be passed off as what was paid | ✅ |
+| protect | protection: other devices cannot read it | ✅ |
+| protect | protection: price drop → partial PayPal refund of the difference | ✅ |
+| protect | protection: a second drop refunds only the new difference | ✅ |
+| protect | protection: simulated drops stop at 15% under the price paid | ✅ |
+| protect | protection: refunds on PayPal match what Dalil recorded | ✅ |
+| protect | protection: a full order-problem refund ends protection | ✅ |
+| protect | protection: ended protection cannot refund again | ✅ |
+| protect | cron checks protections and family requests | ✅ |
+| func | family approval page exists | ✅ |
+
+What these prove: a refund can't exceed what's left on the capture or go past 15% under the price paid in a simulation; a cheaper signed offer can't be swapped in for the price that was actually charged; a capture can only be protected by the browser that captured it; a cart is held and refunded store by store with separate tokens; and a family request can only be paid by someone other than the requester, within the limit they set.
+
 ## Results
 
 | Area | Passed |

@@ -118,8 +118,11 @@ export async function runDemo(opts: {
     (code ? CATALOG.find((p) => p.barcodes?.includes(code)) : undefined) ??
     CATALOG.find((p) => p.keys.some((k) => q.includes(k))) ??
     (code || opts.hasImage ? CATALOG[1] : CATALOG[0]);
+  const wantsCart = /\b(cart|basket)\b|(^|\s)(ال|في\s?ال)?سل[ةه](\s|$)/.test(q);
+  const wantsFamily = /\b(family|mom|dad|parents?|mother|father)\b|ماما|بابا|أمي|امي|أبويا|ابويا|أهلي|اهلي|العيلة|العيله|موافقة/.test(q);
+  if (wantsCart) return runDemoCart({ ...opts, q });
   const wantsWatch = /watch|track|راقب|تابع|لو نزل|if it drops|under|تحت/.test(q);
-  const wantsBuy = /\b(buy|order|purchase|negotiate|haggle)\b|اشتري|اشتريه|اطلب|فاوض/.test(q) && !wantsWatch;
+  const wantsBuy = (/\b(buy|order|purchase|negotiate|haggle)\b|اشتري|اشتريه|اطلب|فاوض/.test(q) || wantsFamily) && !wantsWatch;
   const wantsAuto = wantsWatch && /\b(buy|auto)\b|اشتري|اشتريها|اشتريه|تلقائي/.test(q);
   // Numbers in the message (Arabic-Indic digits too) → target price.
   const nums = (q.replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d))).replace(/[,٬]/g, "").match(/\d+(\.\d+)?/g) ?? [])
@@ -189,10 +192,73 @@ export async function runDemo(opts: {
   }
 
   if (wantsBuy) {
-    emit({ type: "block", block: { type: "approval", offer: best, status: "pending" } });
+    if (wantsFamily) {
+      await say(
+        lang === "ar"
+          ? `\n\nجهزتلك طلب شراء — اضغط **اطلب موافقة العيلة**، حط حد للصرف، وابعت اللينك. هما بيوافقوا ويدفعوا من حساب PayPal بتاعهم.`
+          : `\n\nI drafted the purchase — tap **Ask family to approve**, set a spending limit and send the link. They approve and pay from their own PayPal account.`,
+      );
+    }
+    emit({ type: "block", block: { type: "approval", offer: best, status: "pending", ...(wantsFamily ? { suggest: "family" as const } : {}) } });
   }
   if (wantsWatch) {
     const target = nums.length ? Math.max(...nums) : Math.floor(best.price * 0.93);
     emit({ type: "block", block: { type: "watchDraft", offer: best, targetPrice: target, mode: wantsAuto ? "auto" : "notify" } });
   }
+}
+
+/**
+ * Demo: a multi-store cart. Finds the best trustworthy offer for each product
+ * the user named (AirPods + air fryer by default) and puts them in one cart —
+ * one PayPal approval, one hold per store.
+ */
+async function runDemoCart(opts: {
+  q: string;
+  market: Market;
+  city: string;
+  lang: Lang;
+  signal?: AbortSignal;
+  emit: (e: AgentEvent) => void;
+}): Promise<void> {
+  const { q, market, city, lang, emit, signal } = opts;
+  let products = CATALOG.filter((p) => p.keys.some((k) => q.includes(k)));
+  if (products.length < 2) products = [CATALOG[1], CATALOG[2]].filter((p) => !products.includes(p)).concat(products).slice(0, 2);
+  const picks: ReturnType<typeof prepareOffers> = [];
+  const shown: ReturnType<typeof prepareOffers> = [];
+  for (const [n, product] of products.entries()) {
+    const steps: Array<Omit<Step, "status">> = [
+      { id: `c${n}1`, tool: "web_search", label: "web_search", detail: `${product.name} price ${city}` },
+      { id: `c${n}2`, tool: "deal_check", label: "deal_check", detail: `${product.offers[market].length} offers` },
+    ];
+    for (const st of steps) {
+      if (signal?.aborted) return;
+      emit({ type: "step", step: { ...st, status: "running" } });
+      await wait(550, signal);
+      emit({ type: "step", step: { ...st, status: "done" } });
+    }
+    const ranked = prepareOffers(rankOffers(product.offers[market], market));
+    // One offer list for the whole cart (a newer list replaces the cards in place).
+    shown.push(...ranked);
+    emit({ type: "block", block: { type: "products", offers: [...shown], note: "demo" } });
+    // Prefer a different store for each item when one is nearly as good — that's the point of a multi-store cart.
+    const fair = ranked.filter((o) => o.trust !== "suspicious" && !o.flags.includes("suspicious_discount"));
+    const used = new Set(picks.map((p) => p.store));
+    const best = fair[0];
+    const alt = fair.find((o) => !used.has(o.store) && o.total <= best.total * 1.03);
+    if (best) picks.push(used.has(best.store) && alt ? alt : best);
+  }
+  if (signal?.aborted || !picks.length) return;
+  const stores = new Set(picks.map((p) => p.store)).size;
+  const total = picks.reduce((a, o) => a + o.total, 0);
+  const money = formatMoney(Math.round(total * 100) / 100, picks[0].currency, lang);
+  const text =
+    lang === "ar"
+      ? `حطيت أفضل عرض لكل منتج في سلة واحدة: ${picks.length} منتجات من ${stores} متاجر بإجمالي ${money}. **موافقة واحدة في PayPal** وكل متجر بيتحجزله المبلغ بتاعه لوحده — تقدر تلغي أي متجر خلال 10 دقايق.\n\n_بيانات تجريبية (Demo mode)._`
+      : `I put the best offer for each item in one cart: ${picks.length} items from ${stores} stores, ${money} total. **One PayPal approval** — each store gets its own hold, so you can cancel any store within 10 minutes.\n\n_Sample data (Demo mode)._`;
+  for (const part of Array.from(text).reduce<string[]>((a, ch, i) => (i % 6 ? ((a[a.length - 1] += ch), a) : [...a, ch]), [])) {
+    if (signal?.aborted) return;
+    emit({ type: "text", delta: part });
+    await wait(18, signal);
+  }
+  emit({ type: "block", block: { type: "cart", offers: picks, status: "pending" } });
 }

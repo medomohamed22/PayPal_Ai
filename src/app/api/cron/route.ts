@@ -1,5 +1,7 @@
 import { runAll } from "@/lib/server/watches";
 import { expireGroups } from "@/lib/server/groups";
+import { runProtections } from "@/lib/server/protection";
+import { sweepFamily } from "@/lib/server/family";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -18,5 +20,7 @@ export async function GET(req: Request) {
   const started = Date.now();
   const result = await runAll();
   const groupsExpired = await expireGroups().catch(() => 0);
-  return Response.json({ ...result, groupsExpired, ms: Date.now() - started });
+  const protection = await runProtections().catch(() => ({ checked: 0, refunded: 0 }));
+  const family = await sweepFamily().catch(() => ({ captured: 0, expired: 0 }));
+  return Response.json({ ...result, groupsExpired, protection, family, ms: Date.now() - started });
 }

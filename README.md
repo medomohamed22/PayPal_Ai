@@ -21,6 +21,9 @@ Shopping agents (Grok, ChatGPT, Perplexity, Google, Amazon) race to "buy faster"
 | 🌐 Real browser | `browser_open` / `browser_action`: a real headless **Chromium** (runs JavaScript) opens product pages, picks variants, uses a store's own search box and verifies live price & stock — the user watches a **live screenshot** of what the agent sees. It never logs in or pays on the site; buying only happens through PayPal approval |
 | 🤝 Agent-to-agent negotiation | Dalil's buyer agent haggles with the store's seller agent over HTTP (`/api/seller-agent`, `dalil-negotiation/1`), cites cheaper competitors, and returns a newly **signed** offer at the agreed price |
 | ⏳ Buy now or wait? | Deterministic verdict from price history (Channel3 + prices Dalil records) and the sales calendar (11.11, White/Black Friday, Ramadan…), with a one-tap watch at the suggested target |
+| 🛡️ Price protection after the purchase | For **14 days** after a purchase Dalil keeps checking the price. If it drops, the difference goes back automatically as a **partial PayPal refund** on the original capture (Payments v2 `/captures/{id}/refund` with an `amount`) — no claim, no form. The protected price is read back from PayPal's capture, each refund is capped by what's left on it, and refunds are idempotent per price level |
+| 🛒 Multi-store cart, one approval | Add items from different stores to one cart → **one PayPal order with one `purchase_unit` per store** → one approval, one hold per store. Each store can be cancelled (void) or confirmed (capture) on its own within the 10-minute window. Same signed-offer and mandate checks on the whole cart |
+| 👪 Family approval | Dalil drafts the purchase, you set a spending limit and send a link; a parent or partner **approves and pays from their own PayPal**. Your browser can't approve your own request, and the signature and limit are checked again when money moves; their funds are held 10 minutes so they can still cancel |
 | 👥 Group buy | Split a purchase 2–6 ways via a share link: each share is a PayPal **hold**; all are captured only when everyone has paid, voided on cancel/expiry |
 | 🧾 Trust receipt + savings | After each purchase: why this offer, what was compared, which guarantees were enforced. "Purchases & savings" dashboard with an **AG Grid** table |
 | 🎙️ Voice & barcode | Ask by voice (Egyptian Arabic / English); scan a barcode in a store to compare online (BarcodeDetector / ZXing) |
@@ -29,7 +32,8 @@ Shopping agents (Grok, ChatGPT, Perplexity, Google, Amazon) race to "buy faster"
 ## PayPal APIs used
 - **OAuth 2.0** client credentials
 - **Orders v2**: create (`AUTHORIZE`, `shipping_preference: GET_FROM_FILE`, `user_action: PAY_NOW`), authorize, **track**
-- **Payments v2**: capture, void, refund
+- **Orders v2 with several `purchase_units`**: one order for a multi-store cart (one authorization per store)
+- **Payments v2**: capture, void, refund (full, and **partial** for price protection), get capture details
 - **Vault v3**: setup tokens → payment tokens (save PayPal for auto-buy, no purchase needed), `vault_id` merchant-initiated orders
 
 ## How a purchase works
@@ -39,6 +43,28 @@ Approve ─► POST /api/paypal/create-order   verify signature + mandate → Or
         ─► POST /api/paypal/authorize       funds HELD · shipping from PayPal
         ─► 10-min cancel window ─► /api/paypal/capture   (or /api/paypal/void)
         ─► /api/paypal/track · /api/paypal/refund
+```
+
+## How price protection works
+```
+captured purchase ─► POST /api/protection   capture token + signed offer; capture amount read back from PayPal
+14 days: cron / open app ─► live price < lowest refunded price?
+   ─► Payments v2 refund {amount: difference} on the same capture ─► push "Price dropped — refunded"
+full refund for an order problem ─► protection ends
+```
+
+## How a multi-store cart works
+```
+cart (≤10 signed offers, one currency) ─► POST /api/paypal/cart   verify every signature + mandate on the total
+   ─► Orders v2 AUTHORIZE with one purchase_unit per store ─► one PayPal approval
+   ─► authorize ─► one hold per store ─► capture or void each store within 10 minutes
+```
+
+## How family approval works
+```
+requester: signed offer + limit ─► POST /api/family ─► share link /f/{id}
+approver (another browser) ─► POST /api/family/{id}/pay   re-verify signature + limit; requester's device refused
+   ─► PayPal approval from the approver's own account ─► /confirm ─► hold, 10-minute window ─► capture
 ```
 
 ## How a price watch works
@@ -87,6 +113,9 @@ Open **Settings** → paste your Meta Model API key (stored only in your browser
 3. Ask: `negotiate airpods pro 3` → **Let Dalil negotiate** → watch the two agents agree → pay the new price → open **Purchases & savings**.
 4. On any approval card tap **Split it with friends** → open the link in another browser to pay a share.
 5. Ask: `watch airpods pro 3 and tell me if it drops under 11500` → **Set up** → open 🔔 → **Simulate price drop** → **Buy now**.
+6. **Price protection:** after any purchase is confirmed, the card shows **Price protection · 14 days**. Tap **Simulate price drop (sandbox)** → the difference is refunded on the PayPal capture within seconds and shows up in the trust receipt and in **Purchases & savings** ("Price-drop refunds").
+7. **Multi-store cart:** ask `put airpods pro 3 and an air fryer in one cart` (or tap the cart icon on any offers you like) → **Approve once with PayPal** → one hold per store → cancel one store and confirm the other.
+8. **Family approval:** ask `ask my mom to pay for airpods pro 3` → set a limit → **Create link** → open the link in another browser (or a private window) → **Approve & pay with PayPal** with a second sandbox account → the requester's chat shows it was approved.
 
 ## Architecture
 - **Next.js 15 (App Router) on Vercel**, Tailwind v4, Framer Motion, Dexie (IndexedDB)
@@ -101,7 +130,10 @@ Open **Settings** → paste your Meta Model API key (stored only in your browser
 - `src/lib/server/paypal.ts` — PayPal REST client (Orders, Payments, Vault)
 - `src/lib/server/sign.ts` — HMAC-signed offers
 - `src/lib/server/watches.ts` — price watches, auto-buy, cron
-- Chats, images and settings stay on the device (IndexedDB); only watches live on the server.
+- `src/lib/server/protection.ts` — price protection (partial refunds on the capture)
+- `src/lib/server/family.ts` — family approval requests (share link, approver's own PayPal)
+- `src/app/api/paypal/cart` — multi-store cart as one PayPal order
+- Chats, images and settings stay on the device (IndexedDB); only watches, group buys, family requests and price protections live on the server.
 
 ## Security notes
 - The user's Meta API key is kept in the browser and sent per request; it is never stored or logged on the server. The hosted key always goes to the official Meta endpoint, never to a user-supplied base URL.

@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronDown, ReceiptText } from "lucide-react";
 import { useState } from "react";
 import { formatMoney } from "@/lib/i18n";
-import type { Lang, Negotiation, Offer, PurchaseContext } from "@/lib/types";
+import { PROTECTION_DAYS, type Lang, type Negotiation, type Offer, type Protection, type PurchaseContext } from "@/lib/types";
 
 /** Money saved vs. the average trustworthy offer compared in the same search. */
 export function savedVsMarket(offer: Offer, context?: PurchaseContext, negotiation?: Negotiation): number {
@@ -25,7 +25,9 @@ export function TrustReceipt({
   orderId,
   captureId,
   refunded,
+  protection,
 }: {
+  protection?: Protection;
   offer: Offer;
   lang: Lang;
   context?: PurchaseContext;
@@ -79,6 +81,18 @@ export function TrustReceipt({
   }
   rows.push({ ok: true, text: ar ? "السعر متوقّع رقميًا — محدش يقدر يغيّره قبل الدفع" : "Price was cryptographically signed — no one could change it before payment" });
   rows.push({ ok: true, text: ar ? "المبلغ اتحجز الأول وكان قدامك 10 دقايق تلغي" : "Funds were held first with a 10-minute cancel window" });
+  if (protection) {
+    const back = Number(protection.refundedTotal) || 0;
+    const cur = protection.charged.currency;
+    const backM = <bdi dir={cur === "USD" ? "ltr" : "auto"}>{formatMoney(back, cur, lang)}</bdi>;
+    rows.push({
+      ok: true,
+      text:
+        back > 0
+          ? ar ? <>حماية السعر: السعر نزل بعد الشراء فرجّعتلك {backM} على PayPal</> : <>Price protection: the price dropped after you bought, so {backM} came back to your PayPal</>
+          : ar ? `حماية السعر ${PROTECTION_DAYS} يوم — لو السعر نزل هرجّعلك الفرق` : `Price protection for ${PROTECTION_DAYS} days — if the price drops, you get the difference back`,
+    });
+  }
   if (refunded) rows.push({ ok: true, text: ar ? "اترجعلك المبلغ عن طريق PayPal" : "Refunded through PayPal" });
 
   return (

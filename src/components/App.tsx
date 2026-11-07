@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Bell, BellRing, Camera, CircleCheck, Eye, HandCoins, Menu, Package, Zap, Moon, PanelLeft, Plus, Settings2, Sun, Trash2, X } from "lucide-react";
+import { Bell, BellRing, Camera, CircleCheck, Eye, HandCoins, Menu, Package, Zap, Moon, PanelLeft, Plus, Settings2, ShoppingCart, Sun, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { db, getKV, loadSettings, requestPersistence, saveSettings, setKV, uid } from "@/lib/db";
 import {
@@ -10,6 +10,7 @@ import {
   capture,
   CheckoutError,
   clearResult,
+  createCart,
   createOrder,
   openPayPalWindow,
   PAYPAL_RESULT_KEY,
@@ -35,8 +36,10 @@ import {
   type Negotiation,
   type Conversation,
   type NegotiationEvent,
+  type Protection,
   purchaseContext,
 } from "@/lib/types";
+import type { CartAction } from "./Cart";
 import Composer, { type ComposerPayload } from "./Composer";
 import Logo from "./Logo";
 import MessageView, { type ApprovalAction } from "./MessageView";
@@ -70,6 +73,8 @@ function toWire(messages: ChatMessage[]): WireMessage[] {
         parts.push(
           `[Purchase approval for "${b.offer.title}" at ${b.offer.store}: ${b.status}${b.tracking ? `, tracking ${b.tracking.trackingNumber}` : ""}${b.refund ? `, refunded (${b.refund.reason})` : ""}]`,
         );
+      if (b.type === "cart")
+        parts.push(`[Multi-store cart: ${b.offers.map((o) => `"${o.title}" at ${o.store}`).join(", ")}: ${b.status}]`);
       if (b.type === "watchDraft") parts.push(`[Price watch proposed for "${b.offer.title}" at ${b.offer.store}, target ${b.targetPrice ?? "?"}]`);
     }
     return { role: m.role, text: parts.join("\n\n"), images: images.length ? images : undefined };
@@ -148,6 +153,8 @@ export default function App() {
   const [savingsOpen, setSavingsOpen] = useState(false);
   const [watchDraft, setWatchDraft] = useState<{ offer: Offer; targetPrice?: number; mode?: WatchMode } | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  /** Multi-store cart being filled from product cards (kept on this device). */
+  const [cart, setCart] = useState<Offer[]>([]);
   /** Server-provided AI key for visitors without their own (rate-limited). */
   const [hosted, setHosted] = useState(false);
   const prevStatus = useRef<Map<string, Watch["status"]>>(new Map());
@@ -388,6 +395,122 @@ export default function App() {
       createdAt: Date.now(),
     });
     setFocusMsg(id);
+  };
+
+  /* ---------------- Multi-store cart ---------------- */
+
+  useEffect(() => {
+    getKV<Offer[]>("cart").then((c) => c && setCart(c));
+  }, []);
+  const saveCart = (c: Offer[]) => {
+    setCart(c);
+    setKV("cart", c).catch(() => {});
+  };
+  const inCart = useCallback((o: Offer) => cart.some((x) => x.id === o.id), [cart]);
+  const onAddToCart = (o: Offer) => {
+    if (cart.some((x) => x.id === o.id)) return saveCart(cart.filter((x) => x.id !== o.id));
+    if (cart.length && cart[0].currency !== o.currency) {
+      pushToast({ title: ar ? "عملة مختلفة" : "Different currency", body: ar ? "كل السلة لازم تبقى بنفس العملة." : "Everything in one cart must be in the same currency." });
+      return;
+    }
+    if (cart.length >= 10) {
+      pushToast({ title: ar ? "السلة مليانة" : "Cart is full", body: ar ? "أقصى حاجة 10 منتجات." : "Up to 10 items per cart." });
+      return;
+    }
+    saveCart([...cart, o]);
+  };
+  /** "Checkout": put the cart in the chat as one approval card. */
+  const checkoutCart = async () => {
+    if (!convId || !cart.length) return;
+    const id = uid();
+    await db().messages.put({ id, conversationId: convId, role: "assistant", blocks: [{ type: "cart", offers: cart, status: "pending" }], createdAt: Date.now() });
+    saveCart([]);
+    setFocusMsg(id);
+  };
+
+  type CartB = Extract<Block, { type: "cart" }>;
+  const updateCart = async (msgId: string, idx: number, fn: (b: CartB) => CartB) => {
+    const m = await db().messages.get(msgId);
+    const b = m?.blocks[idx];
+    if (!m || b?.type !== "cart") return;
+    let next = fn(b);
+    // Once no store is still held, the cart as a whole is settled.
+    if (next.units?.length && next.status === "held" && !next.units.some((u) => u.status === "held" || u.status === "pending")) {
+      next = { ...next, status: next.units.some((u) => u.status === "captured") ? "captured" : "voided" };
+    }
+    const blocks = [...m.blocks];
+    blocks[idx] = next;
+    await db().messages.put({ ...m, blocks });
+  };
+  const setUnit = (msgId: string, idx: number, unit: number, patch: Partial<NonNullable<CartB["units"]>[number]>) =>
+    updateCart(msgId, idx, (b) => ({ ...b, units: b.units?.map((u, i) => (i === unit ? { ...u, ...patch } : u)) }));
+
+  const onCart = async (msgId: string, idx: number, action: CartAction, arg?: number) => {
+    if (action === "decline") return updateCart(msgId, idx, (b) => ({ ...b, status: "declined" }));
+    if (action === "retry") return updateCart(msgId, idx, (b) => ({ ...b, status: "pending", message: undefined, units: undefined, orderId: undefined }));
+    if (action === "remove") return updateCart(msgId, idx, (b) => ({ ...b, offers: b.offers.filter((_, i) => i !== arg) }));
+    const popup = action === "approve" ? openPayPalWindow() : null;
+    const m = await db().messages.get(msgId);
+    const block = m?.blocks[idx];
+    if (block?.type !== "cart") {
+      popup?.close();
+      return;
+    }
+    if (action === "cancelUnit" || action === "captureUnit" || action === "cancelAll" || action === "captureAll") {
+      const targets = (block.units ?? []).map((u, i) => ({ u, i })).filter(({ u, i }) => u.status === "held" && (action.endsWith("All") || i === arg));
+      for (const { u, i } of targets) {
+        if (!u.authorizationId) continue;
+        await dropHold(u.authorizationId);
+        try {
+          if (action.startsWith("cancel")) {
+            await voidHold(u.authorizationId, u.holdToken);
+            await setUnit(msgId, idx, i, { status: "voided" });
+          } else {
+            const c = await capture(u.authorizationId, u.holdToken);
+            await setUnit(msgId, idx, i, { status: "captured", captureId: c.id, captureToken: c.captureToken });
+          }
+        } catch (e) {
+          await setUnit(msgId, idx, i, { status: "error", message: (e as Error).message });
+        }
+      }
+      return;
+    }
+    // approve: one PayPal order for the whole cart
+    await updateCart(msgId, idx, (b) => ({ ...b, status: "processing", message: undefined }));
+    try {
+      const mandate = { maxSpend: settings.maxSpend, verifiedOnly: settings.verifiedOnly };
+      const order = await createCart(block.offers, mandate);
+      await updateCart(msgId, idx, (b) => ({
+        ...b,
+        mandate,
+        orderId: order.id,
+        charge: order.charge,
+        units: order.units.map((u) => ({ referenceId: u.referenceId, store: u.store, items: u.items, charge: u.charge, status: "pending" as const })),
+      }));
+      await setKV("pendingCheckout", { msgId, idx, orderId: order.id, orderToken: order.orderToken, kind: "cart" } satisfies PendingCheckout);
+      if (popup && !popup.closed) {
+        popup.location.href = order.approveUrl;
+        const watch = setInterval(async () => {
+          if (!popup.closed) return;
+          clearInterval(watch);
+          await new Promise((r) => setTimeout(r, 1500));
+          const still = await getKV<PendingCheckout>("pendingCheckout");
+          if (still?.orderId === order.id) {
+            await setKV("pendingCheckout", null);
+            await updateCart(msgId, idx, (b) => ({ ...b, status: "pending", units: undefined, orderId: undefined }));
+          }
+        }, 700);
+      } else {
+        window.location.href = order.approveUrl;
+      }
+    } catch (e) {
+      popup?.close();
+      await updateCart(msgId, idx, (b) => ({ ...b, status: "error", message: (e as Error).message }));
+    }
+  };
+
+  const onPatchApproval = async (msgId: string, idx: number, patch: { protection?: Protection; familyId?: string }) => {
+    await updateBlock(msgId, idx, patch);
   };
 
   const updateBlock = async (msgId: string, idx: number, patch: Partial<Extract<Block, { type: "approval" }>>) => {
@@ -646,6 +769,32 @@ export default function App() {
       await setKV("pendingCheckout", null);
       clearResult();
       const { msgId, idx } = pending;
+      if (pending.kind === "cart") {
+        if (result.kind === "cancelled") {
+          await updateCart(msgId, idx, (b) => ({ ...b, status: "pending", units: undefined, orderId: undefined }));
+          return;
+        }
+        try {
+          const a = await authorize(result.orderId, pending.orderToken);
+          const captureAt = Date.now() + HOLD_MINUTES * 60_000;
+          let unitRecs: HoldRecord[] = [];
+          await updateCart(msgId, idx, (b) => {
+            const units = (b.units ?? []).map((u, i) => {
+              const h = a.units.find((x) => x.referenceId === u.referenceId);
+              if (!h) return { ...u, status: "error" as const, message: "No hold returned" };
+              unitRecs.push({ msgId, idx, unit: i, authorizationId: h.authorizationId, holdToken: h.holdToken, captureAt });
+              return { ...u, status: "held" as const, authorizationId: h.authorizationId, holdToken: h.holdToken, charge: h.amount.value };
+            });
+            return { ...b, status: "held", holdExpiresAt: captureAt, units, shipping: a.shipping, payerEmail: a.payerEmail };
+          });
+          const holds = (await getKV<HoldRecord[]>("holds")) ?? [];
+          await setKV("holds", [...holds, ...unitRecs]);
+          unitRecs = [];
+        } catch (e) {
+          await updateCart(msgId, idx, (b) => ({ ...b, status: "error", message: (e as Error).message }));
+        }
+        return;
+      }
       if (result.kind === "cancelled") {
         await updateBlock(msgId, idx, { status: "pending", message: undefined });
         return;
@@ -705,9 +854,11 @@ export default function App() {
         for (const h of due) {
           try {
             const c = await capture(h.authorizationId, h.holdToken);
-            await updateBlock(h.msgId, h.idx, { status: "captured", captureId: c.id, captureToken: c.captureToken });
+            if (h.unit != null) await setUnit(h.msgId, h.idx, h.unit, { status: "captured", captureId: c.id, captureToken: c.captureToken });
+            else await updateBlock(h.msgId, h.idx, { status: "captured", captureId: c.id, captureToken: c.captureToken });
           } catch (e) {
-            await updateBlock(h.msgId, h.idx, { status: "error", message: (e as Error).message });
+            if (h.unit != null) await setUnit(h.msgId, h.idx, h.unit, { status: "error", message: (e as Error).message });
+            else await updateBlock(h.msgId, h.idx, { status: "error", message: (e as Error).message });
           }
         }
         const left = ((await getKV<HoldRecord[]>("holds")) ?? []).filter(
@@ -1014,6 +1165,25 @@ export default function App() {
             <button onClick={newChat} className="rounded-lg p-2 text-fg-muted hover:bg-bg-soft hover:text-fg md:hidden" aria-label={s.newChat}>
               <Plus className="size-5" />
             </button>
+            <AnimatePresence>
+              {cart.length > 0 && (
+                <motion.button
+                  initial={{ scale: 0.6, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.6, opacity: 0 }}
+                  onClick={checkoutCart}
+                  disabled={!convId}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-inv-bg px-3 py-1.5 text-[12px] font-semibold text-inv-fg disabled:opacity-50"
+                  aria-label={ar ? "ادفع السلة" : "Check out cart"}
+                >
+                  <ShoppingCart className="size-3.5" />
+                  <motion.span key={cart.length} initial={{ scale: 1.4 }} animate={{ scale: 1 }} className="tabular-nums">
+                    {cart.length}
+                  </motion.span>
+                  <span className="hidden sm:inline">{ar ? "· ادفع السلة" : "· Checkout"}</span>
+                </motion.button>
+              )}
+            </AnimatePresence>
             <button
               onClick={() => setWatchesOpen(true)}
               className="relative rounded-lg p-2 text-fg-muted hover:bg-bg-soft hover:text-fg"
@@ -1083,6 +1253,11 @@ export default function App() {
                     onOpenDraft={(d) => setWatchDraft(d)}
                     city={settings.city}
                     onApproval={onApproval}
+                    onPatchApproval={onPatchApproval}
+                    onCart={onCart}
+                    onAddToCart={onAddToCart}
+                    inCart={inCart}
+                    demo={settings.demoMode}
                   />
                   </div>
                 ))}

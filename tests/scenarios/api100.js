@@ -453,6 +453,192 @@ const signedNotNeg = (offers) => offers.filter((o) => o.trust !== 'suspicious' &
     check('func', 'PayPal return page exists', r.status === 200, r.status);
   });
 
+  // ---------------- New: multi-store cart, family approval, price protection ----------------
+  const pool = signedNotNeg(us.offers).filter((o) => o.trust !== 'suspicious' && !o.flags.includes('price_unverified'));
+  const twoStores = [];
+  for (const o of pool) if (!twoStores.some((x) => x.store === o.store) && twoStores.length < 2) twoStores.push(o);
+  let cart;
+  await step('cart', 'cart: one PayPal order with one purchase unit per store', async () => {
+    const r = await call('POST', '/api/paypal/cart', { offers: twoStores, mandate: { maxSpend: 0, verifiedOnly: false } });
+    cart = r.j;
+    check('cart', 'cart: one PayPal order with one purchase unit per store', r.s === 200 && r.j.id && r.j.orderToken && r.j.units?.length === twoStores.length, r.t);
+  });
+  await step('cart', 'cart: total over the spending limit is blocked', async () => {
+    const r = await call('POST', '/api/paypal/cart', { offers: twoStores, mandate: { maxSpend: 10, verifiedOnly: false } });
+    check('cart', 'cart: total over the spending limit is blocked', r.s === 403 && r.j.code === 'MANDATE_OVER_LIMIT', r.t);
+  });
+  await step('cart', 'cart: a tampered price is refused', async () => {
+    const forged = [{ ...twoStores[0], price: 1, total: 1 }, twoStores[1]];
+    const r = await call('POST', '/api/paypal/cart', { offers: forged, mandate: { maxSpend: 0, verifiedOnly: false } });
+    check('cart', 'cart: a tampered price is refused', r.s === 400, r.t);
+  });
+  await step('cart', 'cart: mixing USD and EGP offers is refused', async () => {
+    const r = await call('POST', '/api/paypal/cart', { offers: [twoStores[0], signedNotNeg(eg.offers)[0]], mandate: { maxSpend: 0, verifiedOnly: false } });
+    check('cart', 'cart: mixing USD and EGP offers is refused', r.s >= 400 && r.s < 500, r.t);
+  });
+  await step('cart', 'cart: a suspicious store cannot be added', async () => {
+    if (!suspicious) return check('cart', 'cart: a suspicious store cannot be added', true);
+    const r = await call('POST', '/api/paypal/cart', { offers: [twoStores[0], suspicious], mandate: { maxSpend: 0, verifiedOnly: false } });
+    check('cart', 'cart: a suspicious store cannot be added', r.s === 403, r.t);
+  });
+  await step('cart', 'cart: the same offer twice is refused', async () => {
+    const r = await call('POST', '/api/paypal/cart', { offers: [twoStores[0], twoStores[0]], mandate: { maxSpend: 0, verifiedOnly: false } });
+    check('cart', 'cart: the same offer twice is refused', r.s >= 400 && r.s < 500, r.t);
+  });
+
+  let fam;
+  await step('family', 'family: request created for a signed offer within the limit', async () => {
+    const r = await call('POST', '/api/family', { offer, limit: offer.total + 50, name: 'Mo', note: 'for school' }, { 'x-device-id': DEV_A });
+    fam = r.j?.request;
+    check('family', 'family: request created for a signed offer within the limit', r.s === 200 && fam?.id && fam.status === 'pending', r.t);
+  });
+  await step('family', 'family: request above the limit is refused', async () => {
+    const r = await call('POST', '/api/family', { offer, limit: Math.max(1, Math.floor(offer.total / 2)), name: 'Mo' }, { 'x-device-id': DEV_A });
+    check('family', 'family: request above the limit is refused', r.s === 403 || r.s === 409, r.t);
+  });
+  await step('family', 'family: tampered offer is refused', async () => {
+    const r = await call('POST', '/api/family', { offer: { ...offer, price: 1, total: 1 }, limit: 500, name: 'Mo' }, { 'x-device-id': DEV_A });
+    check('family', 'family: tampered offer is refused', r.s === 400, r.t);
+  });
+  await step('family', 'family: the requester cannot approve their own request', async () => {
+    const r = await call('POST', `/api/family/${fam.id}/pay`, {}, { 'x-device-id': DEV_A });
+    check('family', 'family: the requester cannot approve their own request', r.s === 403 && r.j.code === 'SELF_APPROVAL', r.t);
+  });
+  let famPay;
+  await step('family', 'family: approver gets a PayPal approval link', async () => {
+    const r = await call('POST', `/api/family/${fam.id}/pay`, {}, { 'x-device-id': DEV_B });
+    famPay = r.j;
+    check('family', 'family: approver gets a PayPal approval link', r.s === 200 && r.j.orderId && r.j.approveUrl, r.t);
+  });
+  await step('family', 'family: approver view hides nothing it needs, requester view masks', async () => {
+    const a = await call('GET', `/api/family/${fam.id}`, undefined, { 'x-device-id': DEV_B });
+    const q = await call('GET', `/api/family/${fam.id}`);
+    check('family', 'family: approver view hides nothing it needs, requester view masks', a.j?.request?.isApprover && !q.j?.request?.isApprover && !q.j?.request?.isRequester && !/"requester"\s*:\s*"[0-9a-f]{20,}/.test(q.t), a.t + q.t);
+  });
+  if (LOCAL) {
+    await step('family', 'family: confirm with a different order id is refused', async () => {
+      const r = await call('POST', `/api/family/${fam.id}/confirm`, { orderId: 'ORDNOTTHEONE0001' }, { 'x-device-id': DEV_B });
+      check('family', 'family: confirm with a different order id is refused', r.s === 404, r.t);
+    });
+    await step('family', 'family: approval places a hold on the approver\'s PayPal', async () => {
+      const r = await call('POST', `/api/family/${fam.id}/confirm`, { orderId: famPay.orderId }, { 'x-device-id': DEV_B });
+      check('family', 'family: approval places a hold on the approver\'s PayPal', r.s === 200 && r.j.request.status === 'held', r.t);
+    });
+    await step('family', 'family: only the approver can confirm the charge', async () => {
+      const r = await call('POST', `/api/family/${fam.id}/action`, { action: 'capture' }, { 'x-device-id': DEV_A });
+      check('family', 'family: only the approver can confirm the charge', r.s === 409 || r.s === 403, r.t);
+    });
+    await step('family', 'family: approver confirms → captured', async () => {
+      const r = await call('POST', `/api/family/${fam.id}/action`, { action: 'capture' }, { 'x-device-id': DEV_B });
+      check('family', 'family: approver confirms → captured', r.s === 200 && r.j.request.status === 'captured', r.t);
+    });
+    await step('family', 'family: requester can cancel a pending request', async () => {
+      const c = await call('POST', '/api/family', { offer, limit: offer.total + 1, name: 'Mo' }, { 'x-device-id': DEV_A });
+      const r = await call('POST', `/api/family/${c.j.request.id}/action`, { action: 'cancel' }, { 'x-device-id': DEV_A });
+      const p = await call('POST', `/api/family/${c.j.request.id}/pay`, {}, { 'x-device-id': DEV_B });
+      check('family', 'family: requester can cancel a pending request', r.s === 200 && r.j.request.status === 'cancelled' && p.s === 409, r.t + p.t);
+    });
+
+    // Cart: approve once → one hold per store → each store captured or voided on its own.
+    await step('cart', 'cart: one approval → one hold per store', async () => {
+      const r = await call('POST', '/api/paypal/authorize', { orderId: cart.id, orderToken: cart.orderToken });
+      cart.auth = r.j;
+      check('cart', 'cart: one approval → one hold per store', r.s === 200 && r.j.units?.length === twoStores.length && r.j.units.every((u) => u.authorizationId && u.holdToken), r.t);
+    });
+    await step('cart', 'cart: cancel one store, pay the other', async () => {
+      const [u1, u2] = cart.auth.units;
+      const v = await call('POST', '/api/paypal/void', { authorizationId: u1.authorizationId, holdToken: u1.holdToken });
+      const c = await call('POST', '/api/paypal/capture', { authorizationId: u2.authorizationId, holdToken: u2.holdToken });
+      check('cart', 'cart: cancel one store, pay the other', v.s === 200 && c.s === 200 && c.j.captureToken, v.t + c.t);
+    });
+    await step('cart', "cart: one store's hold token can't capture another store", async () => {
+      const [u1, u2] = cart.auth.units;
+      const r = await call('POST', '/api/paypal/capture', { authorizationId: u1.authorizationId, holdToken: u2.holdToken });
+      check('cart', "cart: one store's hold token can't capture another store", r.s === 403, r.t);
+    });
+
+    // Price protection: buy → protect → simulated drop refunds the difference on the capture.
+    const buy = async (o) => {
+      const ord = (await call('POST', '/api/paypal/create-order', { offer: o, mandate: { maxSpend: 0, verifiedOnly: false } })).j;
+      const a = (await call('POST', '/api/paypal/authorize', { orderId: ord.id, orderToken: ord.orderToken })).j;
+      const c = (await call('POST', '/api/paypal/capture', { authorizationId: a.authorizationId, holdToken: a.holdToken })).j;
+      return { captureId: c.id, captureToken: c.captureToken };
+    };
+    let cap, prot;
+    await step('protect', 'protection: turned on for a captured purchase', async () => {
+      cap = await buy(offer);
+      const r = await call('POST', '/api/protection', { ...cap, offer, demo: true }, { 'x-device-id': DEV_A });
+      prot = r.j?.protection;
+      check('protect', 'protection: turned on for a captured purchase', r.s === 200 && prot?.status === 'active' && prot.paidPrice === offer.price && prot.until - prot.createdAt === 14 * 86400000, r.t);
+    });
+    await step('protect', 'protection: same purchase twice returns the same record', async () => {
+      const r = await call('POST', '/api/protection', { ...cap, offer, demo: true }, { 'x-device-id': DEV_A });
+      check('protect', 'protection: same purchase twice returns the same record', r.s === 200 && r.j.protection.id === prot.id, r.t);
+    });
+    await step('protect', 'protection: another device cannot take over the purchase', async () => {
+      const r = await call('POST', '/api/protection', { ...cap, offer, demo: true }, { 'x-device-id': DEV_B });
+      check('protect', 'protection: another device cannot take over the purchase', r.s === 409, r.t);
+    });
+    await step('protect', 'protection: forged capture token refused', async () => {
+      const r = await call('POST', '/api/protection', { captureId: cap.captureId, captureToken: 'x.y', offer, demo: true }, { 'x-device-id': DEV_A });
+      check('protect', 'protection: forged capture token refused', r.s === 403, r.t);
+    });
+    await step('protect', "protection: a cheaper offer can't be passed off as what was paid", async () => {
+      const c2 = await buy(offer);
+      const cheaper = pool.find((o) => Math.abs(o.total - offer.total) > 1);
+      const r = await call('POST', '/api/protection', { ...c2, offer: cheaper, demo: true }, { 'x-device-id': DEV_A });
+      check('protect', "protection: a cheaper offer can't be passed off as what was paid", r.s === 409 && r.j.code === 'CAPTURE_MISMATCH', r.t);
+    });
+    await step('protect', 'protection: other devices cannot read it', async () => {
+      const r = await call('GET', `/api/protection/${prot.id}`, undefined, { 'x-device-id': DEV_B });
+      check('protect', 'protection: other devices cannot read it', r.s === 404, r.t);
+    });
+    await step('protect', 'protection: price drop → partial PayPal refund of the difference', async () => {
+      const r = await call('POST', `/api/protection/${prot.id}`, { action: 'simulate' }, { 'x-device-id': DEV_A });
+      const p = r.j?.protection;
+      const drop = Math.round((offer.price - p?.lastPrice) * 100) / 100;
+      check('protect', 'protection: price drop → partial PayPal refund of the difference', r.s === 200 && p.refunds.length === 1 && Math.abs(Number(p.refunds[0].amount) - drop) <= 0.01 && drop > 0, r.t);
+      prot = p;
+    });
+    await step('protect', 'protection: a second drop refunds only the new difference', async () => {
+      const before = Number(prot.refundedTotal);
+      const r = await call('POST', `/api/protection/${prot.id}`, { action: 'simulate' }, { 'x-device-id': DEV_A });
+      const p = r.j?.protection;
+      check('protect', 'protection: a second drop refunds only the new difference', r.s === 200 && p.refunds.length === 2 && Number(p.refundedTotal) > before && Number(p.refundedTotal) <= offer.price * 0.15 + 0.01, r.t);
+      prot = p;
+    });
+    await step('protect', 'protection: simulated drops stop at 15% under the price paid', async () => {
+      let last;
+      for (let i = 0; i < 6; i++) last = await call('POST', `/api/protection/${prot.id}`, { action: 'simulate', price: 1 }, { 'x-device-id': DEV_A });
+      const l = await call('GET', '/api/protection', undefined, { 'x-device-id': DEV_A });
+      const p = l.j.protections.find((x) => x.id === prot.id);
+      check('protect', 'protection: simulated drops stop at 15% under the price paid', last.s === 409 && last.j.code === 'SIMULATION_LIMIT' && Number(p.refundedTotal) <= Math.ceil(offer.price * 0.15 * 100) / 100 + 0.01, last.t + JSON.stringify(p?.refundedTotal));
+      prot = p;
+    });
+    await step('protect', 'protection: refunds on PayPal match what Dalil recorded', async () => {
+      const log = await (await fetch('http://localhost:4010/__log')).json();
+      const total = Object.values(log.refunds).filter((r) => r.capture === cap.captureId).reduce((a, r) => a + Number(r.amount.value), 0);
+      check('protect', 'protection: refunds on PayPal match what Dalil recorded', Math.abs(total - Number(prot.refundedTotal)) < 0.005, `${total} vs ${prot.refundedTotal}`);
+    });
+    await step('protect', 'protection: a full order-problem refund ends protection', async () => {
+      const f = await call('POST', '/api/paypal/refund', { ...cap, reason: 'damaged' });
+      const r = await call('GET', `/api/protection/${prot.id}`, undefined, { 'x-device-id': DEV_A });
+      check('protect', 'protection: a full order-problem refund ends protection', f.s === 200 && r.j.protection.status === 'ended', f.t + r.t);
+    });
+    await step('protect', 'protection: ended protection cannot refund again', async () => {
+      const r = await call('POST', `/api/protection/${prot.id}`, { action: 'simulate' }, { 'x-device-id': DEV_A });
+      check('protect', 'protection: ended protection cannot refund again', r.s === 409, r.t);
+    });
+    await step('protect', 'cron checks protections and family requests', async () => {
+      const r = await call('GET', '/api/cron', undefined, { authorization: 'Bearer cs' });
+      check('protect', 'cron checks protections and family requests', r.s === 200 && /protect/i.test(r.t) && /family/i.test(r.t), r.t);
+    });
+  }
+  await step('func', 'family approval page exists', async () => {
+    const r = await fetch(BASE + '/f/00000000-0000-0000-0000-000000000000');
+    check('func', 'family approval page exists', r.status === 200, r.status);
+  });
+
   // ---------------- Price grounding (local mock model only) ----------------
   if (LOCAL) {
     const key = { 'x-model-api-key': 'k' };

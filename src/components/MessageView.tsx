@@ -5,7 +5,8 @@ import { AlertCircle, AlertTriangle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Strings } from "@/lib/i18n";
-import type { Block, ChatMessage, Lang, Offer, WatchMode } from "@/lib/types";
+import type { Block, ChatMessage, Lang, Offer, Protection, WatchMode } from "@/lib/types";
+import { CartCard, type CartAction } from "./Cart";
 import { WatchDraftCard } from "./Watches";
 import { InsightCard } from "./Insight";
 import { ApprovalCard, BrowserCard, LinkCard, OfferSkeletons, ProductCards, StepsTimeline } from "./cards";
@@ -23,8 +24,18 @@ export default function MessageView({
   onWatch,
   onOpenDraft,
   onApproval,
+  onPatchApproval,
+  onCart,
+  onAddToCart,
+  inCart,
+  demo,
   city,
 }: {
+  onPatchApproval?: (msgId: string, blockIndex: number, patch: { protection?: Protection; familyId?: string }) => Promise<void> | void;
+  onCart?: (msgId: string, blockIndex: number, action: CartAction, arg?: number) => Promise<void> | void;
+  onAddToCart?: (o: Offer) => void;
+  inCart?: (o: Offer) => boolean;
+  demo?: boolean;
   msg: ChatMessage;
   live: boolean;
   s: Strings;
@@ -112,7 +123,22 @@ export default function MessageView({
                 </div>
               );
             case "products":
-              return <ProductCards key={i} offers={b.offers} s={s} lang={lang} onBuy={onBuy} onWatch={onWatch} disabled={busy} city={city} />;
+              return (
+                <ProductCards
+                  key={i}
+                  offers={b.offers}
+                  s={s}
+                  lang={lang}
+                  onBuy={onBuy}
+                  onWatch={onWatch}
+                  onAddToCart={onAddToCart}
+                  inCart={inCart}
+                  disabled={busy}
+                  city={city}
+                />
+              );
+            case "cart":
+              return <CartCard key={i} block={b} lang={lang} onAction={(a, arg) => onCart?.(msg.id, i, a, arg)} />;
             case "approval":
               return (
                 <ApprovalCard
@@ -142,6 +168,12 @@ export default function MessageView({
                   refund={b.refund}
                   onTrack={async () => onApproval(msg.id, i, "track")}
                   onRefund={async (r) => onApproval(msg.id, i, "refund", r)}
+                  protection={b.protection}
+                  captureToken={b.captureToken}
+                  familyId={b.familyId}
+                  suggest={b.suggest}
+                  demo={demo}
+                  onPatch={onPatchApproval ? (patch) => onPatchApproval(msg.id, i, patch) : undefined}
                 />
               );
             case "link":

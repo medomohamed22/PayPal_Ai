@@ -1,12 +1,13 @@
 "use client";
 
 import { animate, AnimatePresence, motion } from "framer-motion";
-import { HandCoins, Handshake, ShieldCheck, ShoppingBag, X } from "lucide-react";
+import { HandCoins, Handshake, ShieldCheck, ShoppingBag, TrendingDown, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { db } from "@/lib/db";
 import { formatMoney } from "@/lib/i18n";
 import type { Lang, Market } from "@/lib/types";
+import { protectionSavedInOfferCurrency } from "./Protection";
 import { savedVsMarket } from "./Receipt";
 import type { PurchaseRow } from "./SavingsGrid";
 
@@ -32,11 +33,37 @@ async function loadPurchases(): Promise<PurchaseRow[]> {
         store: b.offer.store,
         paid: b.offer.total,
         currency: b.offer.currency,
-        saved: savedVsMarket(b.offer, b.context, b.negotiation),
+        saved: savedVsMarket(b.offer, b.context, b.negotiation) + protectionSavedInOfferCurrency(b.protection),
         negotiated: b.negotiation?.status === "done" ? b.negotiation.saved ?? 0 : 0,
+        priceDrop: protectionSavedInOfferCurrency(b.protection),
         status: b.refund ? "refunded" : b.status === "held" ? "held" : "captured",
         orderId: b.orderId,
       });
+    });
+    // Multi-store carts: one row per item in each store that was paid (or is on hold).
+    m.blocks.forEach((b, i) => {
+      if (b.type !== "cart" || !b.units) return;
+      for (const u of b.units) {
+        if (u.status !== "captured" && u.status !== "held") continue;
+        b.offers.forEach((o, j) => {
+          if (o.store !== u.store) return;
+          rows.push({
+            id: `${m.id}:${i}:${j}`,
+            conversationId: m.conversationId,
+            date: m.createdAt,
+            title: o.title,
+            image: o.image,
+            store: o.store,
+            paid: o.total,
+            currency: o.currency,
+            saved: 0,
+            negotiated: 0,
+            priceDrop: 0,
+            status: u.status === "held" ? "held" : "captured",
+            orderId: b.orderId,
+          });
+        });
+      }
     });
   }
   return rows.sort((a, b) => b.date - a.date);
@@ -85,7 +112,8 @@ export default function SavingsPanel({
     const saved = kept.reduce((a, r) => a + conv(r.saved, r.currency), 0);
     const spent = kept.reduce((a, r) => a + conv(r.paid, r.currency), 0);
     const negotiated = kept.reduce((a, r) => a + conv(r.negotiated, r.currency), 0);
-    return { count: kept.length, saved, spent, negotiated, pct: spent + saved > 0 ? Math.round((saved / (spent + saved)) * 100) : 0 };
+    const priceDrops = kept.reduce((a, r) => a + conv(r.priceDrop ?? 0, r.currency), 0);
+    return { count: kept.length, saved, spent: spent - priceDrops, negotiated, priceDrops, pct: spent + saved > 0 ? Math.round((saved / (spent + saved)) * 100) : 0 };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, rate, cur]);
   const money = (v: number) => formatMoney(cur === "EGP" ? Math.round(v) : Math.round(v * 100) / 100, cur, lang);
@@ -132,10 +160,11 @@ export default function SavingsPanel({
                 </div>
               </motion.div>
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {[
                   { icon: ShoppingBag, k: ar ? "صرفت" : "Spent", v: money(stats.spent) },
                   { icon: Handshake, k: ar ? "من التفاوض" : "Negotiated", v: money(stats.negotiated) },
+                  { icon: TrendingDown, k: ar ? "رجع من نزول السعر" : "Price-drop refunds", v: money(stats.priceDrops) },
                   { icon: ShieldCheck, k: ar ? "مشتريات آمنة" : "Protected buys", v: String(stats.count) },
                 ].map((t, i) => (
                   <motion.div
@@ -171,8 +200,8 @@ export default function SavingsPanel({
               ) : null}
               <p className="text-center text-[11px] text-fg-muted">
                 {ar
-                  ? "التوفير = متوسط العروض الموثوقة اللي اتقارنت − اللي دفعته (شامل التفاوض). محفوظ على جهازك بس."
-                  : "Savings = average of the trustworthy offers compared − what you paid (incl. negotiation). Stored only on this device."}
+                  ? "التوفير = متوسط العروض الموثوقة اللي اتقارنت − اللي دفعته (شامل التفاوض واسترداد نزول السعر). محفوظ على جهازك بس."
+                  : "Savings = average of the trustworthy offers compared − what you paid (incl. negotiation and price-drop refunds). Stored only on this device."}
               </p>
             </div>
           </motion.aside>

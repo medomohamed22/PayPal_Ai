@@ -97,6 +97,27 @@ export type Block =
       capturedAt?: number;
       /** Group buy started from this approval. */
       groupId?: string;
+      /** Price protection on the captured payment (refunds a later price drop). */
+      protection?: Protection;
+      /** Family approval: someone else approves and pays from their own PayPal. */
+      familyId?: string;
+      /** Open a helper on the card right away (e.g. the user asked for family approval). */
+      suggest?: "family";
+    }
+  /** Multi-store cart: one PayPal order (one approval), one hold per store. */
+  | {
+      type: "cart";
+      offers: Offer[];
+      status: ApprovalStatus;
+      orderId?: string;
+      holdExpiresAt?: number;
+      message?: string;
+      mandate?: { maxSpend: number; verifiedOnly: boolean };
+      shipping?: { name?: string; address?: string };
+      payerEmail?: string;
+      units?: CartUnit[];
+      /** Charged grand total (charge currency) as PayPal reported it. */
+      charge?: { value: string; currency: string };
     }
   | { type: "watchDraft"; offer: Offer; targetPrice?: number; mode?: WatchMode }
   | { type: "error"; text: string }
@@ -156,6 +177,8 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 export const HOLD_MINUTES = 10;
+/** Days Dalil keeps watching the price after a purchase. */
+export const PROTECTION_DAYS = 14;
 
 export interface Mandate {
   maxSpend: number;
@@ -316,5 +339,85 @@ export interface GroupView {
   isOrganizer: boolean;
   organizerPaid: boolean;
   members: Array<{ name: string; organizer: boolean; status: "pending" | "held" | "captured" | "voided" | "failed"; at: number }>;
+  message?: string;
+}
+
+/* ---------------- Price protection ---------------- */
+
+export interface Protection {
+  id: string;
+  captureId: string;
+  orderId: string;
+  title: string;
+  store: string;
+  url?: string;
+  image?: string;
+  /** Offer currency (EGP/USD). */
+  currency: string;
+  paidPrice: number;
+  shipping: number;
+  /** What PayPal captured (USD for EGP offers). */
+  charged: { value: string; currency: string };
+  fxRate?: number;
+  source: "live" | "demo";
+  status: "active" | "expired" | "ended";
+  createdAt: number;
+  until: number;
+  lastPrice?: number;
+  lastCheckedAt?: number;
+  history: PricePoint[];
+  refunds: Array<{ id: string; status: string; amount: string; currency: string; price: number; at: number; simulated?: boolean }>;
+  /** Sum of refunds, in the charge currency. */
+  refundedTotal: string;
+  message?: string;
+}
+
+/* ---------------- Multi-store cart ---------------- */
+
+export interface CartUnit {
+  referenceId: string;
+  store: string;
+  items: string[];
+  /** Charged amount for this store (charge currency). */
+  charge?: string;
+  authorizationId?: string;
+  holdToken?: string;
+  captureId?: string;
+  captureToken?: string;
+  status: "pending" | "held" | "captured" | "voided" | "error";
+  message?: string;
+}
+
+/* ---------------- Family approval ---------------- */
+
+export type FamilyStatus = "pending" | "paying" | "held" | "captured" | "declined" | "cancelled" | "expired" | "error";
+
+/** Public view of a family purchase request (no device ids). */
+export interface FamilyView {
+  id: string;
+  title: string;
+  store: string;
+  image?: string;
+  url?: string;
+  price: number;
+  shipping: number;
+  total: number;
+  currency: string;
+  /** What PayPal will charge the approver (USD for EGP). */
+  charge: { value: string; currency: string };
+  /** Spending limit the requester set — the server refuses anything above it. */
+  limit: number;
+  requesterName: string;
+  note?: string;
+  trust: TrustLevel;
+  status: FamilyStatus;
+  isRequester: boolean;
+  /** This browser approved (and so may cancel the hold or confirm now). */
+  isApprover: boolean;
+  createdAt: number;
+  expiresAt: number;
+  holdExpiresAt?: number;
+  decidedAt?: number;
+  approverEmail?: string;
   message?: string;
 }

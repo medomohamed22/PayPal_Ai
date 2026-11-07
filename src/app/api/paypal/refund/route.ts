@@ -3,6 +3,7 @@ import { refundCapture } from "@/lib/server/paypal";
 import { errorResponse } from "@/lib/server/http";
 import { checkCaptureToken } from "@/lib/server/sign";
 import { rateLimit } from "@/lib/server/ratelimit";
+import { endProtectionForCapture } from "@/lib/server/protection";
 
 export const runtime = "nodejs";
 
@@ -25,7 +26,10 @@ export async function POST(req: Request) {
   try {
     const b = Body.parse(await req.json());
     checkCaptureToken(b.captureToken, b.captureId);
-    return Response.json(await refundCapture(b.captureId, NOTE[b.reason]));
+    const r = await refundCapture(b.captureId, NOTE[b.reason]);
+    // Nothing left to protect once the purchase is refunded in full.
+    await endProtectionForCapture(b.captureId).catch(() => undefined);
+    return Response.json(r);
   } catch (err) {
     if (err instanceof z.ZodError) return Response.json({ error: "Invalid request" }, { status: 400 });
     return errorResponse(err);

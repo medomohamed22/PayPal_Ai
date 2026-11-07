@@ -100,10 +100,10 @@ function useCountdown(to: number) {
   return { h: Math.floor(ms / 3600_000), m: Math.floor((ms % 3600_000) / 60_000) };
 }
 
-export function ShareRow({ url, title, lang }: { url: string; title: string; lang: Lang }) {
+export function ShareRow({ url, title, lang, text: custom }: { url: string; title: string; lang: Lang; text?: string }) {
   const ar = lang === "ar";
   const [copied, setCopied] = useState(false);
-  const text = ar ? `ادخل معايا في شراء ${title} وندفع سوا عن طريق PayPal: ${url}` : `Chip in with me for ${title} via PayPal: ${url}`;
+  const text = custom ?? (ar ? `ادخل معايا في شراء ${title} وندفع سوا عن طريق PayPal: ${url}` : `Chip in with me for ${title} via PayPal: ${url}`);
   return (
     <div className="flex gap-2">
       <button
@@ -462,7 +462,7 @@ export function GroupPage({ id }: { id: string }) {
   );
 }
 
-function Confetti() {
+export function Confetti() {
   const bits = Array.from({ length: 18 }, (_, i) => i);
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>

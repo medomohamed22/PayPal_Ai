@@ -221,6 +221,82 @@ export async function createOrder(input: OrderInput): Promise<CreatedOrder> {
   return { id: order.id, approveUrl: approve.href, charge: { value: total, currency } };
 }
 
+/* ---------------- Multi-store cart: one order, one approval ---------------- */
+
+export interface CartUnitInput {
+  /** Unique per order — PayPal matches each hold back to its store by this id. */
+  referenceId: string;
+  store: string;
+  shipping: number;
+  items: Array<{ title: string; price: number; url?: string }>;
+}
+
+/**
+ * One PayPal order with one purchase unit per store. The buyer approves once;
+ * each store's unit gets its own authorization (hold), so each can be
+ * captured or voided on its own.
+ */
+export async function createCartOrder(input: {
+  cartId: string;
+  units: CartUnitInput[];
+  currency: string;
+  returnUrl: string;
+  cancelUrl: string;
+}): Promise<CreatedOrder & { units: Array<{ referenceId: string; value: string }> }> {
+  if (input.units.length < 1 || input.units.length > 10) throw new PayPalError("A cart holds 1–10 stores", 400, "CART_SIZE");
+  let currency = "";
+  let grand = 0;
+  const unitTotals: Array<{ referenceId: string; value: string }> = [];
+  const purchase_units = input.units.map((u) => {
+    const items = u.items.map((it) => {
+      const c = toChargeable(it.price, input.currency);
+      currency = c.currency;
+      return { name: it.title.slice(0, 127), quantity: "1", category: "PHYSICAL_GOODS", unit_amount: { currency_code: c.currency, value: c.value } };
+    });
+    const itemTotal = items.reduce((a, it) => a + Number(it.unit_amount.value), 0);
+    const ship = toChargeable(u.shipping, input.currency);
+    const value = (itemTotal + Number(ship.value)).toFixed(2);
+    grand += Number(value);
+    unitTotals.push({ referenceId: u.referenceId, value });
+    return {
+      reference_id: u.referenceId.slice(0, 256),
+      description: `Dalil cart · ${u.store}`.slice(0, 127),
+      soft_descriptor: "DALIL",
+      amount: {
+        currency_code: currency,
+        value,
+        breakdown: {
+          item_total: { currency_code: currency, value: itemTotal.toFixed(2) },
+          shipping: { currency_code: currency, value: ship.value },
+        },
+      },
+      items,
+    };
+  });
+  const order = await pp<{ id: string; links: Array<{ rel: string; href: string }> }>("/v2/checkout/orders", {
+    method: "POST",
+    requestId: `dalil-cart-${input.cartId}`.slice(0, 108),
+    body: {
+      intent: "AUTHORIZE",
+      purchase_units,
+      payment_source: {
+        paypal: {
+          experience_context: {
+            brand_name: "Dalil",
+            shipping_preference: "GET_FROM_FILE",
+            user_action: "PAY_NOW",
+            return_url: input.returnUrl,
+            cancel_url: input.cancelUrl,
+          },
+        },
+      },
+    },
+  });
+  const approve = order.links.find((l) => l.rel === "payer-action" || l.rel === "approve");
+  if (!approve) throw new PayPalError("No approval link returned", 502);
+  return { id: order.id, approveUrl: approve.href, charge: { value: grand.toFixed(2), currency }, units: unitTotals };
+}
+
 export interface ShippingInfo {
   name?: string;
   address?: string;
@@ -236,6 +312,8 @@ export interface Authorized {
   payerEmail?: string;
   vaultId?: string;
   customerId?: string;
+  /** One hold per purchase unit (a multi-store cart has one unit per store). */
+  units: Array<{ referenceId: string; authorizationId: string; status: string; amount: { value: string; currency: string } }>;
 }
 
 type OrderJson = {
@@ -249,6 +327,7 @@ type OrderJson = {
     };
   };
   purchase_units?: Array<{
+    reference_id?: string;
     shipping?: {
       name?: { full_name?: string };
       address?: {
@@ -297,6 +376,12 @@ function toAuthorized(o: OrderJson): Authorized {
     payerEmail: o.payment_source?.paypal?.email_address ?? o.payer?.email_address,
     vaultId: o.payment_source?.paypal?.attributes?.vault?.id,
     customerId: o.payment_source?.paypal?.attributes?.vault?.customer?.id,
+    units: (o.purchase_units ?? []).flatMap((u, i) => {
+      const a = u.payments?.authorizations?.[0];
+      return a
+        ? [{ referenceId: u.reference_id ?? String(i), authorizationId: a.id, status: a.status, amount: { value: a.amount.value, currency: a.amount.currency_code } }]
+        : [];
+    }),
   };
 }
 
@@ -361,14 +446,28 @@ export async function createAndAuthorizeWithVault(
   return authorizeOrder(o.id);
 }
 
-export async function captureAuthorization(authorizationId: string): Promise<{ id: string; status: string }> {
+export async function captureAuthorization(
+  authorizationId: string,
+): Promise<{ id: string; status: string; amount?: string; currency?: string }> {
   if (!/^[A-Z0-9]{10,25}$/.test(authorizationId)) throw new PayPalError("Invalid authorization id", 400);
-  const r = await pp<{ id: string; status: string }>(`/v2/payments/authorizations/${pid(authorizationId)}/capture`, {
-    method: "POST",
-    body: { final_capture: true },
-    requestId: `dalil-cap-${authorizationId}`,
-  });
-  return { id: r.id, status: r.status };
+  const r = await pp<{ id: string; status: string; amount?: { value: string; currency_code: string } }>(
+    `/v2/payments/authorizations/${pid(authorizationId)}/capture`,
+    {
+      method: "POST",
+      body: { final_capture: true },
+      requestId: `dalil-cap-${authorizationId}`,
+    },
+  );
+  return { id: r.id, status: r.status, amount: r.amount?.value, currency: r.amount?.currency_code };
+}
+
+/** Read a capture back from PayPal (amount actually charged — the source of truth for price protection). */
+export async function getCapture(captureId: string): Promise<{ id: string; status: string; amount: string; currency: string }> {
+  if (!/^[A-Z0-9]{10,25}$/.test(captureId)) throw new PayPalError("Invalid capture id", 400);
+  const r = await pp<{ id: string; status: string; amount: { value: string; currency_code: string } }>(
+    `/v2/payments/captures/${pid(captureId)}`,
+  );
+  return { id: r.id, status: r.status, amount: r.amount.value, currency: r.amount.currency_code };
 }
 
 export async function voidAuthorization(authorizationId: string): Promise<{ status: string }> {
@@ -448,11 +547,30 @@ export async function addTracking(orderId: string, captureId: string, carrierNam
   return { trackingNumber, carrier: carrierName, addedAt: Date.now() };
 }
 
-export async function refundCapture(captureId: string, note: string): Promise<{ id: string; status: string; amount?: string; currency?: string }> {
+/**
+ * Refund a capture. Without `partial` the whole (remaining) amount is refunded;
+ * with it, only that amount — used by price protection to pay back a price drop.
+ * `key` makes each partial refund idempotent (same key → same refund, never twice).
+ */
+export async function refundCapture(
+  captureId: string,
+  note: string,
+  partial?: { value: string; currency: string; key: string },
+): Promise<{ id: string; status: string; amount?: string; currency?: string }> {
   if (!/^[A-Z0-9]{10,25}$/.test(captureId)) throw new PayPalError("Invalid capture id", 400);
+  if (partial && !(/^\d+(\.\d{1,2})?$/.test(partial.value) && Number(partial.value) > 0)) {
+    throw new PayPalError("Invalid refund amount", 400, "INVALID_AMOUNT");
+  }
   const r = await pp<{ id: string; status: string; amount?: { value: string; currency_code: string } }>(
     `/v2/payments/captures/${pid(captureId)}/refund`,
-    { method: "POST", requestId: `dalil-refund-${captureId}`, body: { note_to_payer: note.slice(0, 255) } },
+    {
+      method: "POST",
+      requestId: (partial ? `dalil-pp-${captureId}-${partial.key}` : `dalil-refund-${captureId}`).slice(0, 108),
+      body: {
+        note_to_payer: note.slice(0, 255),
+        ...(partial ? { amount: { value: partial.value, currency_code: partial.currency } } : {}),
+      },
+    },
   );
-  return { id: r.id, status: r.status, amount: r.amount?.value, currency: r.amount?.currency_code };
+  return { id: r.id, status: r.status, amount: r.amount?.value ?? partial?.value, currency: r.amount?.currency_code ?? partial?.currency };
 }
